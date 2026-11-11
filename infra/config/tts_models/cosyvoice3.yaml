@@ -4,6 +4,7 @@
 # Download: modelscope download --model FunAudioLLM/Fun-CosyVoice3-0.5B-2512 --local_dir checkpoints/Fun-CosyVoice3-0.5B-2512
 cosyvoice3:
     plugin_class: "inference.plugins.tts.cosyvoice3_plugin.CosyVoice3TTSPlugin"
+    model: "Fun-CosyVoice3-0.5B-2512" # Display name in the component picker.
     python: "${COSYVOICE_PYTHON}"
     repo_dir: "${COSYVOICE_REPO}"
     model_dir: "checkpoints/Fun-CosyVoice3-0.5B-2512"

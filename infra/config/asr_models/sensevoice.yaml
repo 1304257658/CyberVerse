@@ -4,6 +4,7 @@
 # Download: modelscope download --model iic/SenseVoiceSmall --local_dir checkpoints/SenseVoiceSmall
 sensevoice:
     plugin_class: "inference.plugins.asr.sensevoice_plugin.SenseVoiceASRPlugin"
+    model: "SenseVoiceSmall" # Display name in the component picker.
     python: "${SENSEVOICE_PYTHON}"
     model_dir: "checkpoints/SenseVoiceSmall"
     device: "cuda:0"

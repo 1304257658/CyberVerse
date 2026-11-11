@@ -1,0 +1,20 @@
+# Local Fun-CosyVoice3-0.5B streaming TTS. No API key needed.
+# Runs in a separate worker process inside the CosyVoice venv; set
+# COSYVOICE_PYTHON (venv python) and COSYVOICE_REPO (CosyVoice source checkout).
+# Download: modelscope download --model FunAudioLLM/Fun-CosyVoice3-0.5B-2512 --local_dir checkpoints/Fun-CosyVoice3-0.5B-2512
+cosyvoice3:
+    plugin_class: "inference.plugins.tts.cosyvoice3_plugin.CosyVoice3TTSPlugin"
+    python: "${COSYVOICE_PYTHON}"
+    repo_dir: "${COSYVOICE_REPO}"
+    model_dir: "checkpoints/Fun-CosyVoice3-0.5B-2512"
+    # Zero-shot reference voice, cached once at worker start-up.
+    voice: "cyberverse_default"
+    prompt_wav: "${COSYVOICE_REPO}/asset/zero_shot_prompt.wav"
+    prompt_text: "You are a helpful assistant.<|endofprompt|>希望你以后能够做的比我还好呦。"
+    fp16: false # fp32 measured faster than fp16 on RTX 4090.
+    speed: 1.0
+    sample_rate: 24000 # Native CosyVoice3 output rate.
+    target_sample_rate: 16000 # Resampled rate sent to avatar models.
+    rechunk_samples: 17920 # Same avatar-aligned rechunking as cloud TTS plugins.
+    max_segment_chars: 80 # Long sentences are further split at commas.
+    socket_path: "/tmp/cyberverse-cosyvoice3.sock"

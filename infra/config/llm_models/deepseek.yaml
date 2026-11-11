@@ -1,0 +1,10 @@
+# DeepSeek (OpenAI-compatible API). Put the key in config/env as DEEPSEEK_API_KEY.
+deepseek:
+    plugin_class: "inference.plugins.llm.openai_plugin.OpenAILLMPlugin"
+    api_key: "${DEEPSEEK_API_KEY}"
+    base_url: "https://api.deepseek.com"
+    model: "deepseek-flash" # or "deepseek-v4-pro"
+    temperature: 0.7
+    extra_body:
+        thinking:
+            type: "disabled" # Non-thinking mode for faster spoken replies.

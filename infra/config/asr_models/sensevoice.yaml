@@ -1,0 +1,19 @@
+# Local SenseVoiceSmall ASR (FunASR). No API key needed.
+# Runs in a separate worker process with its own venv (funasr + torch); set
+# SENSEVOICE_PYTHON to that venv's python, e.g. ~/venvs/asr/bin/python.
+# Download: modelscope download --model iic/SenseVoiceSmall --local_dir checkpoints/SenseVoiceSmall
+sensevoice:
+    plugin_class: "inference.plugins.asr.sensevoice_plugin.SenseVoiceASRPlugin"
+    python: "${SENSEVOICE_PYTHON}"
+    model_dir: "checkpoints/SenseVoiceSmall"
+    device: "cuda:0"
+    language: "auto" # auto / zh / en / yue / ja / ko
+    use_itn: true # Punctuation + inverse text normalization.
+    input_format: "pcm_s16le" # Go server sends 16 kHz mono int16 PCM.
+    sample_rate: 16000
+    silence_threshold: 0.01 # RMS below this counts as silence.
+    silence_duration: 0.6 # Seconds of silence that finalize an utterance.
+    min_speech_seconds: 0.3 # Ignore shorter bursts (clicks, noise).
+    max_utterance_seconds: 20 # Force a final transcript after this long.
+    pre_roll_seconds: 0.3 # Audio kept before speech onset.
+    socket_path: "/tmp/cyberverse-sensevoice.sock"

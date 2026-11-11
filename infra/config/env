@@ -43,6 +43,9 @@ UBERLLM_API_KEY=your_uberllm_api_key
 # Runcrate OpenAI-compatible open-weight LLM models.
 RUNCRATE_API_KEY=your_runcrate_api_key
 
+# DeepSeek OpenAI-compatible LLM models (https://api.deepseek.com).
+DEEPSEEK_API_KEY=your_deepseek_api_key
+
 # Digital human providers
 
 # Baidu Xiling live avatar and offline video synthesis.

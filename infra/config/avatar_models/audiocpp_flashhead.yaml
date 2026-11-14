@@ -1,0 +1,47 @@
+# SoulX-FlashHead Lite on audio.cpp (GGUF Q8 + cuDNN VAE), for 8 GB GPUs.
+# Model stays resident in a long-lived worker process (audio.cpp C API);
+# select with inference.avatar.default: "audiocpp_flashhead".
+audiocpp_flashhead:
+    plugin_class: "inference.plugins.avatar.audiocpp_flashhead_plugin.AudioCppFlashHeadAvatarPlugin"
+    # Python for the worker (ctypes + numpy only). Empty = same interpreter as inference.
+    python: ""
+    lib_path: "/home/chick/src/audio.cpp/build/cudnn/bin/libaudiocpp.so"
+    model_path: "/mnt/g/models/SoulX-FlashHead-GGUF/SoulX-FlashHead-Lite-Q8_0.gguf"
+    # CUDA 13 + cuDNN runtime used to build libaudiocpp (worker process only).
+    ld_library_path: "/home/chick/mamba/envs/acpp-build/lib:/home/chick/mamba/envs/acpp-build/lib64:/usr/lib/wsl/lib"
+    exec_plan: '{"vae":{"impl":"cudnn"}}'
+    backend: "cuda"
+    device: 0
+    threads: 8
+    height: 512
+    width: 512
+    num_inference_steps: 4
+    seed: 42
+    color_correction_strength: 1.0
+    startup_timeout_s: 300
+    warmup: true
+    warmup_blocks: 2
+    # One JSON line per utterance (lead, first-frame latency, fps, underruns).
+    metrics_log: "/mnt/h/projects/cv_setup/logs/audiocpp_avatar_metrics.jsonl"
+    # Adaptive "buffer a bit, then play while generating".
+    #   lead = D * (1 - min(gen_fps, tts_input_rate) / 25) + chunk(0.96s) + safety_s + bias
+    # D = utterance audio length (if TTS already finished) else
+    #     max(audio received, rolling average utterance length), capped.
+    buffering:
+        min_lead_s: 0.3
+        max_lead_s: 10.0
+        safety_s: 0.3
+        initial_gen_fps: 20.0        # until measured
+        gen_fps_ewma_alpha: 0.3
+        initial_utterance_s: 6.0
+        utterance_ewma_alpha: 0.3
+        unknown_duration_cap_s: 20.0
+        low_watermark_s: 0.5         # log + small bias bump when lead falls below
+        rebuffer_s: 1.92             # after an underrun, hold until this much is buffered
+        underrun_tolerance_s: 0.08
+        underrun_bias_gain: 1.0      # bias += gain * stall_s + step
+        underrun_bias_step_s: 0.5
+        bias_max_s: 4.0
+        bias_decay: 0.7              # clean utterance: bias *= decay
+        max_pending_audio_blocks: 32 # bounded audio queue (~30 s)
+        max_buffer_chunks: 11        # bounded ready-video queue (~10.5 s, ~200 MB RGB)

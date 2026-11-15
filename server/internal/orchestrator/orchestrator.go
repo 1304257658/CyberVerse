@@ -4554,6 +4554,40 @@ func (o *Orchestrator) Interrupt(sessionID string) error {
 	return nil
 }
 
+// ClearSessionChat stops any in-flight turn, clears in-memory chat history for the live
+// session, and empties persisted session.json messages for that session id (recordings stay).
+func (o *Orchestrator) ClearSessionChat(sessionID string) (time.Time, error) {
+	if o == nil || o.sessionMgr == nil {
+		return time.Time{}, fmt.Errorf("orchestrator not ready")
+	}
+	session, err := o.sessionMgr.Get(sessionID)
+	if err != nil {
+		return time.Time{}, err
+	}
+
+	_ = o.Interrupt(sessionID)
+
+	clearedAt := session.ClearChatHistory()
+
+	if o.charStore != nil && strings.TrimSpace(session.CharacterID) != "" {
+		ownerID := session.OwnerIDSnapshot()
+		if strings.TrimSpace(session.CharacterID) == kanshan.CharacterID && strings.TrimSpace(ownerID) == "" {
+			return clearedAt, fmt.Errorf("kanshan session missing owner")
+		}
+		if err := o.charStore.ClearPersistedSessionMessages(session.CharacterID, ownerID, sessionID); err != nil {
+			return clearedAt, err
+		}
+	}
+
+	if o.wsHub != nil {
+		o.wsHub.BroadcastJSON(sessionID, map[string]any{
+			"type":       "chat_cleared",
+			"cleared_at": clearedAt.Format(time.RFC3339Nano),
+		})
+	}
+	return clearedAt, nil
+}
+
 // TeardownSession cleans up all resources for a session.
 func (o *Orchestrator) TeardownSession(sessionID string) error {
 	session, err := o.sessionMgr.Get(sessionID)

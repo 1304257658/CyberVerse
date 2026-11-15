@@ -207,6 +207,7 @@ const {
   historyLoading,
   historyHasMore,
   sendText,
+  clearChat,
   connect: chatConnect,
   disconnect: chatDisconnect,
   loadHistory,
@@ -968,6 +969,18 @@ async function handleDisconnect() {
   router.push(returnPath)
 }
 
+async function handleClearChat() {
+  if (!window.confirm(t('session.clearConfirm'))) {
+    return
+  }
+  try {
+    await clearChat()
+  } catch (err) {
+    console.error('[SessionPage] clear chat failed:', err)
+    window.alert(t('session.clearFailed'))
+  }
+}
+
 function handleLoadMore() {
   if (characterId.value) {
     loadHistory(characterId.value)
@@ -1380,7 +1393,14 @@ function micDockBarHeight(level: number): string {
             </button>
             <span class="text-base font-semibold text-cv-text truncate">{{ t('session.chatTitle') }}</span>
           </div>
-          <button class="text-[13px] text-cv-text-muted hover:text-cv-text transition-colors cursor-pointer">{{ t('session.clear') }}</button>
+          <button
+            type="button"
+            class="text-[13px] text-cv-text-muted hover:text-cv-text transition-colors cursor-pointer"
+            :disabled="historyLoading"
+            @click="handleClearChat"
+          >
+            {{ t('session.clear') }}
+          </button>
         </div>
 
         <!-- Messages (reuse ChatPanel) -->

@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "node ./node_modules/vite/bin/vite.js",
     "build": "vue-tsc -b && node ./node_modules/vite/bin/vite.js build",
-    "preview": "node ./node_modules/vite/bin/vite.js preview"
+    "preview": "node ./node_modules/vite/bin/vite.js preview",
+    "test": "vitest run"
   },
   "dependencies": {
     "aliyun-rtc-sdk": "6.14.6",
@@ -25,6 +26,7 @@
     "tailwindcss": "^4.2.2",
     "typescript": "~5.9.3",
     "vite": "^8.0.1",
+    "vitest": "^3.2.4",
     "vue-tsc": "^3.2.5"
   }
 }

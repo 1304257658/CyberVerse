@@ -1,5 +1,6 @@
 import { ref, computed } from 'vue'
 import {
+  clearSessionChat,
   getConversationMessages,
   getTaskArtifactUrl,
   getTaskEvents,
@@ -9,6 +10,7 @@ import {
   type AgentTaskEvent,
 } from '../services/api'
 import { translate } from '../i18n'
+import { emptyLocalChatMessages, filterHistoryAfterChatClear } from '../utils/sessionChatClear'
 
 export type TaskStatus = 'queued' | 'running' | 'waiting_user' | 'completed' | 'failed' | 'cancelled'
 
@@ -651,6 +653,12 @@ export function useChat(sessionId: () => string) {
           console.warn('[CyberVerse]', data.message || data)
           break
 
+        case 'chat_cleared': {
+          const clearedMs = Date.parse(readString(data.cleared_at))
+          applyLocalChatClear(Number.isFinite(clearedMs) ? clearedMs : undefined)
+          break
+        }
+
         case 'avatar_status': {
           const turnSeq = parseTurnSeq(data)
           if (isOlderTurn(turnSeq)) {
@@ -733,6 +741,28 @@ export function useChat(sessionId: () => string) {
   const historyLoading = ref(false)
   const historyHasMore = ref(false)
   const historyNextCursor = ref('')
+  const liveChatClearedAtMs = ref(0)
+
+  function applyLocalChatClear(clearedAtMs?: number) {
+    messages.value = emptyLocalChatMessages()
+    historyNextCursor.value = ''
+    historyHasMore.value = false
+    liveChatClearedAtMs.value = clearedAtMs && clearedAtMs > 0 ? clearedAtMs : Date.now()
+    resetTransientState()
+    voiceDrafts.clear()
+    lastTaskSeqByTaskId.clear()
+    avatarStatus.value = 'idle'
+  }
+
+  async function clearChat() {
+    const sid = sessionId()
+    if (!sid) {
+      throw new Error('missing session id')
+    }
+    const resp = await clearSessionChat(sid)
+    const clearedMs = Date.parse(resp.cleared_at)
+    applyLocalChatClear(Number.isFinite(clearedMs) ? clearedMs : undefined)
+  }
 
   async function loadHistory(characterId: string) {
     if (!characterId || historyLoading.value) return
@@ -743,13 +773,18 @@ export function useChat(sessionId: () => string) {
         50,
         historyNextCursor.value || undefined,
       )
-      const historyMessages: ChatMessage[] = resp.messages.map((m) => ({
+      let historyMessages: ChatMessage[] = resp.messages.map((m) => ({
         role: m.role as ChatMessage['role'],
         content: m.content,
         timestamp: new Date(m.timestamp).getTime() || 0,
         isHistory: true,
         sessionId: m.session_id,
       }))
+      historyMessages = filterHistoryAfterChatClear(
+        historyMessages,
+        sessionId(),
+        liveChatClearedAtMs.value,
+      )
       const historySessionIds = Array.from(new Set(
         historyMessages
           .map(message => message.sessionId || '')
@@ -792,6 +827,7 @@ export function useChat(sessionId: () => string) {
     connect,
     sendText,
     interrupt,
+    clearChat,
     disconnect,
     loadHistory,
     registerSignalingHandler,

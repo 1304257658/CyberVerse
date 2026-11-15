@@ -262,6 +262,12 @@ export interface ConversationMessagesResponse {
   has_more: boolean
 }
 
+export async function clearSessionChat(sessionId: string): Promise<{ status: string; cleared_at: string }> {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/clear-chat`, {
+    method: 'POST',
+  })
+}
+
 export async function getConversationMessages(
   characterId: string,
   limit: number = 50,

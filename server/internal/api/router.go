@@ -79,6 +79,7 @@ func (r *Router) registerRoutes() {
 	r.mux.HandleFunc("POST /api/v1/sessions", r.handleCreateSession)
 	r.mux.HandleFunc("DELETE /api/v1/sessions/{id}", r.handleDeleteSession)
 	r.mux.HandleFunc("POST /api/v1/sessions/{id}/message", r.handleSendMessage)
+	r.mux.HandleFunc("POST /api/v1/sessions/{id}/clear-chat", r.handleClearSessionChat)
 	r.mux.HandleFunc("GET /api/v1/sessions/{id}/tasks", r.handleListSessionTasks)
 	r.mux.HandleFunc("GET /api/v1/sessions", r.handleListSessions)
 	r.mux.HandleFunc("GET /api/v1/tasks/{task_id}", r.handleGetTask)

@@ -574,6 +574,32 @@ func (r *Router) handleSendMessage(w http.ResponseWriter, req *http.Request) {
 	writeJSON(w, http.StatusAccepted, map[string]string{"status": "queued"})
 }
 
+func (r *Router) handleClearSessionChat(w http.ResponseWriter, req *http.Request) {
+	id := req.PathValue("id")
+	session, err := r.sessionMgr.Get(id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, ErrorResponse{Error: err.Error()})
+		return
+	}
+	if !r.authorizeKanshanSessionAccess(w, req, session) {
+		return
+	}
+	if r.orch == nil {
+		writeJSON(w, http.StatusServiceUnavailable, ErrorResponse{Error: "orchestrator unavailable"})
+		return
+	}
+	clearedAt, err := r.orch.ClearSessionChat(id)
+	if err != nil {
+		log.Printf("Failed to clear chat for session %s: %v", id, err)
+		writeJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "failed to clear chat"})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{
+		"status":      "cleared",
+		"cleared_at":  clearedAt.Format(time.RFC3339Nano),
+	})
+}
+
 func (r *Router) handleListSessions(w http.ResponseWriter, req *http.Request) {
 	sessions := r.sessionMgr.List()
 	type sessionInfo struct {

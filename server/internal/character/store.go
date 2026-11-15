@@ -738,6 +738,61 @@ func (s *Store) SaveConversationForOwner(characterID, ownerID, sessionID string,
 	return os.WriteFile(filepath.Join(fullDir, "session.json"), data, 0644)
 }
 
+// ClearPersistedSessionMessages empties the messages array in session.json for every on-disk
+// session folder matching sessionID. Turn recordings and other files in those folders are kept.
+func (s *Store) ClearPersistedSessionMessages(characterID, ownerID, sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return fmt.Errorf("session id is required")
+	}
+	sessDir := s.sessionsDirForOwner(characterID, ownerID)
+	if sessDir == "" {
+		return fmt.Errorf("character not found: %s", characterID)
+	}
+	entries, err := os.ReadDir(sessDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+	var saveErr error
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		sessionFile := filepath.Join(sessDir, entry.Name(), "session.json")
+		data, err := os.ReadFile(sessionFile)
+		if err != nil {
+			continue
+		}
+		var record map[string]any
+		if err := json.Unmarshal(data, &record); err != nil {
+			continue
+		}
+		storedID, _ := record["session_id"].(string)
+		if strings.TrimSpace(storedID) == "" {
+			storedID = entry.Name()
+		}
+		if storedID != sessionID {
+			continue
+		}
+		record["messages"] = []any{}
+		if _, ok := record["chat_cleared_at"]; !ok {
+			record["chat_cleared_at"] = time.Now().UTC().Format(time.RFC3339)
+		}
+		out, err := json.MarshalIndent(record, "", "  ")
+		if err != nil {
+			saveErr = err
+			continue
+		}
+		if err := os.WriteFile(sessionFile, out, 0644); err != nil {
+			saveErr = err
+		}
+	}
+	return saveErr
+}
+
 // LoadRecentMessages loads recent conversation messages for a character, paginated by cursor.
 // before: cursor (session directory name) — empty string means start from newest.
 // limit: max number of messages to return.

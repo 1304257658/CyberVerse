@@ -415,6 +415,52 @@ func TestSendMessageInvalidJSON(t *testing.T) {
 	}
 }
 
+func TestClearSessionChat(t *testing.T) {
+	store := newTestCharStore(t)
+	char, err := store.Create(&character.Character{
+		Name:          "Clear",
+		AvatarBackend: character.AvatarBackendLocalImage,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	mgr := orchestrator.NewSessionManager(4)
+	inf := &fakeInferenceService{
+		avatarInfo: &pb.AvatarInfo{ModelName: "avatar.flash_head", OutputFps: 25, OutputWidth: 512, OutputHeight: 512},
+	}
+	hub := ws.NewHub()
+	orch := orchestrator.New(inf, hub, mgr, nil, store)
+	cfg := &config.Config{Server: config.ServerConfig{CORSOrigins: []string{"https://app.example.com"}}}
+	r := NewRouter(mgr, orch, hub, nil, cfg, store, "", "")
+
+	body := `{"mode":"standard","character_id":"` + char.ID + `"}`
+	req := httptest.NewRequest("POST", "/api/v1/sessions", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.Handler().ServeHTTP(w, req)
+	var createResp CreateSessionResponse
+	if err := json.NewDecoder(w.Body).Decode(&createResp); err != nil {
+		t.Fatal(err)
+	}
+
+	session, err := mgr.Get(createResp.SessionID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	session.AddMessage(orchestrator.ChatMessage{Role: "user", Content: "secret"})
+	session.AddMessage(orchestrator.ChatMessage{Role: "assistant", Content: "noted"})
+
+	req2 := httptest.NewRequest("POST", "/api/v1/sessions/"+createResp.SessionID+"/clear-chat", nil)
+	w2 := httptest.NewRecorder()
+	r.Handler().ServeHTTP(w2, req2)
+	if w2.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", w2.Code, w2.Body.String())
+	}
+	if len(session.HistorySnapshot()) != 0 {
+		t.Fatalf("expected session history cleared, got %+v", session.HistorySnapshot())
+	}
+}
+
 func TestListSessions(t *testing.T) {
 	r := newTestRouter()
 

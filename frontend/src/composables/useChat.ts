@@ -10,7 +10,11 @@ import {
   type AgentTaskEvent,
 } from '../services/api'
 import { translate } from '../i18n'
-import { emptyLocalChatMessages, filterHistoryAfterChatClear } from '../utils/sessionChatClear'
+import {
+  characterChatHistoryClearedAtMs,
+  emptyLocalChatMessages,
+  filterHistoryAfterChatClear,
+} from '../utils/sessionChatClear'
 
 export type TaskStatus = 'queued' | 'running' | 'waiting_user' | 'completed' | 'failed' | 'cancelled'
 
@@ -71,7 +75,10 @@ export interface ViduControlEvent {
   message: string
 }
 
-export function useChat(sessionId: () => string) {
+export function useChat(
+  sessionId: () => string,
+  characterChatHistoryClearedAt: () => string | undefined = () => undefined,
+) {
   const ws = ref<WebSocket | null>(null)
   const messages = ref<ChatMessage[]>([])
   const currentTranscript = ref('')
@@ -754,7 +761,7 @@ export function useChat(sessionId: () => string) {
     avatarStatus.value = 'idle'
   }
 
-  async function clearChat() {
+  async function clearChat(): Promise<string> {
     const sid = sessionId()
     if (!sid) {
       throw new Error('missing session id')
@@ -762,6 +769,7 @@ export function useChat(sessionId: () => string) {
     const resp = await clearSessionChat(sid)
     const clearedMs = Date.parse(resp.cleared_at)
     applyLocalChatClear(Number.isFinite(clearedMs) ? clearedMs : undefined)
+    return resp.cleared_at
   }
 
   async function loadHistory(characterId: string) {
@@ -784,6 +792,7 @@ export function useChat(sessionId: () => string) {
         historyMessages,
         sessionId(),
         liveChatClearedAtMs.value,
+        characterChatHistoryClearedAtMs(characterChatHistoryClearedAt()),
       )
       const historySessionIds = Array.from(new Set(
         historyMessages

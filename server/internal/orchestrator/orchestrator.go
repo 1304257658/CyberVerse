@@ -4577,6 +4577,9 @@ func (o *Orchestrator) ClearSessionChat(sessionID string) (time.Time, error) {
 		if err := o.charStore.ClearPersistedSessionMessages(session.CharacterID, ownerID, sessionID); err != nil {
 			return clearedAt, err
 		}
+		if err := o.charStore.SetChatHistoryClearedAt(session.CharacterID, ownerID, clearedAt); err != nil {
+			return clearedAt, err
+		}
 	}
 
 	if o.wsHub != nil {
@@ -5035,6 +5038,23 @@ func (o *Orchestrator) persistSessionConversation(session *Session) (bool, error
 	sessionID, characterID, startedAt, endedAt, history := session.ConversationSnapshot()
 	if characterID == "" || len(history) == 0 {
 		return false, nil
+	}
+
+	if clearedAt, ok := session.ChatHistoryClearedAtSnapshot(); ok {
+		filtered := make([]ChatMessage, 0, len(history))
+		for _, m := range history {
+			ts := m.Timestamp
+			if ts.IsZero() {
+				ts = startedAt
+			}
+			if !ts.Before(clearedAt) {
+				filtered = append(filtered, m)
+			}
+		}
+		history = filtered
+		if len(history) == 0 {
+			return false, nil
+		}
 	}
 
 	messages := make([]map[string]any, len(history))

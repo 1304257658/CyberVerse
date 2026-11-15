@@ -106,6 +106,8 @@ export interface Character {
   image_mode: string
   created_at: string
   updated_at: string
+  /** Durable cutoff when the user cleared live chat for this character. */
+  chat_history_cleared_at?: string
 }
 
 export type CharacterForm = Omit<Character, 'id' | 'created_at' | 'updated_at' | 'images' | 'active_image'>

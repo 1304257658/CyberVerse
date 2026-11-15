@@ -12,6 +12,7 @@ import { useDirectWebRTC } from '../composables/useDirectWebRTC'
 import { useChat, type BaiduXilingAudioEvent } from '../composables/useChat'
 import { useVisualInput, type VisualInputConfig } from '../composables/useVisualInput'
 import { deleteSession } from '../services/api'
+import { useCharacterStore } from '../stores/characters'
 import {
   clearSessionLaunchState,
   loadSessionLaunchState,
@@ -22,6 +23,7 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
+const characterStore = useCharacterStore()
 const sessionId = computed(() => route.params.id as string)
 
 const videoPlayerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
@@ -217,7 +219,12 @@ const {
   sendSignaling,
   sendWSMessage,
   isConnected: chatConnected,
-} = useChat(() => sessionId.value)
+} = useChat(
+  () => sessionId.value,
+  () => (characterStore.current?.id === characterId.value
+    ? characterStore.current?.chat_history_cleared_at
+    : undefined),
+)
 
 registerViduControlHandler((event) => {
   if (event.type === 'vidu_ready') {
@@ -886,6 +893,7 @@ onMounted(async () => {
 
   // Load conversation history for this character
   if (characterId.value) {
+    await characterStore.fetchOne(characterId.value).catch(() => {})
     loadHistory(characterId.value)
   }
 
@@ -974,7 +982,13 @@ async function handleClearChat() {
     return
   }
   try {
-    await clearChat()
+    const clearedAt = await clearChat()
+    if (characterStore.current?.id === characterId.value) {
+      characterStore.current = {
+        ...characterStore.current,
+        chat_history_cleared_at: clearedAt,
+      }
+    }
   } catch (err) {
     console.error('[SessionPage] clear chat failed:', err)
     window.alert(t('session.clearFailed'))

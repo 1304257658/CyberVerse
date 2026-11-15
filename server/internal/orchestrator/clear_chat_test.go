@@ -65,6 +65,14 @@ func TestClearSessionChatResetsInMemoryHistoryAndTruncatesPersistedMessages(t *t
 		}
 	}
 
+	gotChar, err := store.Get(char.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if gotChar.ChatHistoryClearedAt == "" {
+		t.Fatal("expected character chat_history_cleared_at after clear")
+	}
+
 	recDir := store.SessionRecordingDir(char.ID, session.ID, session.CreatedAt)
 	turnPath := filepath.Join(recDir, "turn1.mp4")
 	if err := os.WriteFile(turnPath, []byte("fake"), 0644); err != nil {

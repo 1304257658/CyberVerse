@@ -49,6 +49,8 @@ type Character struct {
 	ImageMode       string           `json:"image_mode"`
 	CreatedAt       string           `json:"created_at"`
 	UpdatedAt       string           `json:"updated_at"`
+	// ChatHistoryClearedAt is set when the user clears live chat for this character (not kanshan per-user dirs).
+	ChatHistoryClearedAt string `json:"chat_history_cleared_at,omitempty"`
 }
 
 type AgentExtension struct {
@@ -738,6 +740,139 @@ func (s *Store) SaveConversationForOwner(characterID, ownerID, sessionID string,
 	return os.WriteFile(filepath.Join(fullDir, "session.json"), data, 0644)
 }
 
+type conversationOwnerMeta struct {
+	ChatHistoryClearedAt string `json:"chat_history_cleared_at,omitempty"`
+}
+
+func parseMessageTimestamp(msg map[string]any) (time.Time, bool) {
+	raw := msg["timestamp"]
+	switch v := raw.(type) {
+	case string:
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return time.Time{}, false
+		}
+		if ts, err := time.Parse(time.RFC3339Nano, v); err == nil {
+			return ts, true
+		}
+		if ts, err := time.Parse(time.RFC3339, v); err == nil {
+			return ts, true
+		}
+	case float64:
+		sec := int64(v)
+		nsec := int64((v - float64(sec)) * float64(time.Second))
+		return time.Unix(sec, nsec), true
+	}
+	return time.Time{}, false
+}
+
+func (s *Store) ownerConversationMetaPath(characterID, ownerID string) string {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID == "" {
+		return ""
+	}
+	charDir := s.CharDir(characterID)
+	if charDir == "" {
+		return ""
+	}
+	return filepath.Join(charDir, "users", ownerDirName(ownerID), "conversation_meta.json")
+}
+
+func (s *Store) loadOwnerConversationMeta(characterID, ownerID string) (conversationOwnerMeta, error) {
+	path := s.ownerConversationMetaPath(characterID, ownerID)
+	if path == "" {
+		return conversationOwnerMeta{}, nil
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return conversationOwnerMeta{}, nil
+		}
+		return conversationOwnerMeta{}, err
+	}
+	var meta conversationOwnerMeta
+	if err := json.Unmarshal(data, &meta); err != nil {
+		return conversationOwnerMeta{}, err
+	}
+	return meta, nil
+}
+
+func (s *Store) saveOwnerConversationMeta(characterID, ownerID string, meta conversationOwnerMeta) error {
+	path := s.ownerConversationMetaPath(characterID, ownerID)
+	if path == "" {
+		return fmt.Errorf("character not found: %s", characterID)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	data, err := json.MarshalIndent(meta, "", "  ")
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+// ChatHistoryClearedAtForOwner returns the durable cutoff after the user cleared chat (character-wide).
+func (s *Store) ChatHistoryClearedAtForOwner(characterID, ownerID string) (time.Time, bool) {
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID != "" {
+		meta, err := s.loadOwnerConversationMeta(characterID, ownerID)
+		if err != nil || strings.TrimSpace(meta.ChatHistoryClearedAt) == "" {
+			return time.Time{}, false
+		}
+		ts, err := time.Parse(time.RFC3339Nano, meta.ChatHistoryClearedAt)
+		if err != nil {
+			ts, err = time.Parse(time.RFC3339, meta.ChatHistoryClearedAt)
+		}
+		if err != nil || ts.IsZero() {
+			return time.Time{}, false
+		}
+		return ts, true
+	}
+	s.mu.RLock()
+	c, ok := s.chars[characterID]
+	s.mu.RUnlock()
+	if !ok || strings.TrimSpace(c.ChatHistoryClearedAt) == "" {
+		return time.Time{}, false
+	}
+	ts, err := time.Parse(time.RFC3339Nano, c.ChatHistoryClearedAt)
+	if err != nil {
+		ts, err = time.Parse(time.RFC3339, c.ChatHistoryClearedAt)
+	}
+	if err != nil || ts.IsZero() {
+		return time.Time{}, false
+	}
+	return ts, true
+}
+
+// SetChatHistoryClearedAt records a character-level conversation cutoff used when reloading history.
+// Per-user session trees (kanshan) store the cutoff in conversation_meta.json under users/{owner}/.
+func (s *Store) SetChatHistoryClearedAt(characterID, ownerID string, clearedAt time.Time) error {
+	if clearedAt.IsZero() {
+		return fmt.Errorf("cleared_at is required")
+	}
+	ts := clearedAt.UTC().Format(time.RFC3339Nano)
+	ownerID = strings.TrimSpace(ownerID)
+	if ownerID != "" {
+		return s.saveOwnerConversationMeta(characterID, ownerID, conversationOwnerMeta{
+			ChatHistoryClearedAt: ts,
+		})
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	c, ok := s.chars[characterID]
+	if !ok {
+		return fmt.Errorf("character not found: %s", characterID)
+	}
+	c.ChatHistoryClearedAt = ts
+	c.UpdatedAt = time.Now().UTC().Format(time.RFC3339)
+	if err := s.saveOne(c); err != nil {
+		return err
+	}
+	s.chars[characterID] = c
+	return nil
+}
+
 // ClearPersistedSessionMessages empties the messages array in session.json for every on-disk
 // session folder matching sessionID. Turn recordings and other files in those folders are kept.
 func (s *Store) ClearPersistedSessionMessages(characterID, ownerID, sessionID string) error {
@@ -807,6 +942,8 @@ func (s *Store) LoadRecentMessagesForOwner(characterID, ownerID string, before s
 		return nil, "", false, fmt.Errorf("character not found: %s", characterID)
 	}
 
+	chatClearedAt, hasChatClearedAt := s.ChatHistoryClearedAtForOwner(characterID, ownerID)
+
 	entries, err := os.ReadDir(sessDir)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -859,6 +996,7 @@ func (s *Store) LoadRecentMessagesForOwner(characterID, ownerID string, before s
 		}
 
 		// Annotate messages with session metadata
+		filtered := make([]map[string]any, 0, len(record.Messages))
 		for _, msg := range record.Messages {
 			msg["session_id"] = record.SessionID
 			if msg["timestamp"] == nil {
@@ -866,7 +1004,17 @@ func (s *Store) LoadRecentMessagesForOwner(characterID, ownerID string, before s
 			} else if ts, ok := msg["timestamp"].(string); ok && strings.TrimSpace(ts) == "" {
 				msg["timestamp"] = record.StartedAt
 			}
+			if hasChatClearedAt {
+				if msgTime, ok := parseMessageTimestamp(msg); ok && msgTime.Before(chatClearedAt) {
+					continue
+				}
+			}
+			filtered = append(filtered, msg)
 		}
+		if len(filtered) == 0 {
+			continue
+		}
+		record.Messages = filtered
 
 		// These messages are in chronological order within the session,
 		// but we're iterating sessions newest-first, so prepend

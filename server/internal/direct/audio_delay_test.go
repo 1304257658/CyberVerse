@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/cyberverse/server/internal/config"
 	"github.com/cyberverse/server/internal/mediapeer"
 )
 
@@ -19,15 +20,17 @@ func testPCM(samples int, start int) []byte {
 
 func TestCurrentVideoBitrateKbpsUsesGCCBudget(t *testing.T) {
 	t.Parallel()
+	ConfigureLiveVideo(config.OfficialDirectVideoDefaults())
+	def := config.OfficialDirectVideoDefaults()
 	p := &DirectPeer{}
 
-	if got := p.currentVideoBitrateKbps(); got != defaultDirectVideoBitrateKbps {
-		t.Fatalf("default bitrate=%d want %d", got, defaultDirectVideoBitrateKbps)
+	if got := p.currentVideoBitrateKbps(); got != def.TargetBitrateKbps {
+		t.Fatalf("default bitrate=%d want %d", got, def.TargetBitrateKbps)
 	}
 
 	p.targetBitrateBps.Store(675_000)
-	if got := p.currentVideoBitrateKbps(); got != minDirectVideoBitrateKbps {
-		t.Fatalf("low GCC bitrate=%d want %d", got, minDirectVideoBitrateKbps)
+	if got := p.currentVideoBitrateKbps(); got != def.MinBitrateKbps {
+		t.Fatalf("low GCC bitrate=%d want %d", got, def.MinBitrateKbps)
 	}
 
 	p.targetBitrateBps.Store(2_000_000)
@@ -36,8 +39,8 @@ func TestCurrentVideoBitrateKbpsUsesGCCBudget(t *testing.T) {
 	}
 
 	p.targetBitrateBps.Store(4_000_000)
-	if got := p.currentVideoBitrateKbps(); got != maxDirectVideoBitrateKbps {
-		t.Fatalf("capped bitrate=%d want %d", got, maxDirectVideoBitrateKbps)
+	if got := p.currentVideoBitrateKbps(); got != def.MaxBitrateKbps {
+		t.Fatalf("capped bitrate=%d want %d", got, def.MaxBitrateKbps)
 	}
 }
 

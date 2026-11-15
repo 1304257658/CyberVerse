@@ -33,8 +33,13 @@ func urlOK(raw string) bool {
 		return false
 	}
 	u, err := url.Parse(raw)
-	if err != nil || u.Scheme != "https" || u.Host == "" {
+	if err != nil || u.Host == "" {
 		return false
+	}
+	if u.Scheme != "https" {
+		if u.Scheme != "http" || (!strings.HasPrefix(u.Host, "127.0.0.1:") && !strings.HasPrefix(u.Host, "localhost:")) {
+			return false
+		}
 	}
 	host := strings.ToLower(u.Host)
 	if host == "www.volcengine.com" || host == "volcengine.com" {

@@ -3,12 +3,27 @@ import { computed } from 'vue'
 import { useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import type { Character } from '../types'
-import { formatVoiceTypeDisplay } from '../utils/voice'
+import { formatVoiceTypeDisplay, isDoubaoTTSVoiceType } from '../utils/voice'
+import { useDoubaoVoicePreview } from '../composables/useDoubaoVoicePreview'
 
 const router = useRouter()
 const { t, locale } = useI18n()
 const props = defineProps<{ character: Character }>()
 const emit = defineEmits<{ delete: [id: string] }>()
+const { previewingVoice, previewVoice } = useDoubaoVoicePreview()
+
+const showDoubaoPreview = computed(() =>
+  !isExternalAvatar.value
+  && props.character.mode === 'standard'
+  && props.character.components?.tts === 'doubao'
+  && isDoubaoTTSVoiceType(props.character.voice_type),
+)
+
+async function handleCardPreviewVoice(event: Event) {
+  event.stopPropagation()
+  if (!showDoubaoPreview.value) return
+  await previewVoice(props.character.voice_type)
+}
 const isBaiduXiling = computed(() => props.character.avatar_backend === 'baidu_xiling')
 const isXunfei = computed(() => props.character.avatar_backend === 'xunfei')
 const isVidu = computed(() => props.character.avatar_backend === 'vidu')
@@ -108,14 +123,23 @@ function edit() {
 
         <!-- Footer -->
         <div class="flex items-center justify-between">
-          <div class="flex items-center gap-1.5">
-            <span class="w-1.5 h-1.5 rounded-full" :class="isExternalAvatar ? 'bg-cv-accent' : 'bg-cv-success'" />
+          <div class="flex items-center gap-1.5 min-w-0">
+            <span class="w-1.5 h-1.5 rounded-full shrink-0" :class="isExternalAvatar ? 'bg-cv-accent' : 'bg-cv-success'" />
             <span
-              class="max-w-[165px] truncate text-[11px] text-cv-text/60 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]"
+              class="max-w-[120px] truncate text-[11px] text-cv-text/60 drop-shadow-[0_1px_2px_rgba(0,0,0,0.75)]"
               :title="isExternalAvatar ? externalAvatarLabel : formatVoiceTypeDisplay(character.voice_type, t, locale)"
             >
               {{ isExternalAvatar ? externalAvatarLabel : formatVoiceTypeDisplay(character.voice_type, t, locale) }}
             </span>
+            <button
+              v-if="showDoubaoPreview"
+              type="button"
+              class="shrink-0 text-[10px] text-cv-accent hover:text-white px-1.5 py-0.5 rounded border border-cv-accent/40 bg-black/40 backdrop-blur-sm cursor-pointer"
+              :title="t('characterEdit.previewListenHint')"
+              @click="handleCardPreviewVoice"
+            >
+              {{ previewingVoice === character.voice_type ? t('characterEdit.previewStop') : t('characterEdit.previewListen') }}
+            </button>
           </div>
           <button @click.stop="launch"
                   class="cv-pi-button cv-pi-button--primary cv-pi-button--compact">

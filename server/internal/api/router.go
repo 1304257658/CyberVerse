@@ -8,6 +8,7 @@ import (
 	"github.com/cyberverse/server/internal/agenttask"
 	"github.com/cyberverse/server/internal/character"
 	"github.com/cyberverse/server/internal/config"
+	"github.com/cyberverse/server/internal/doubaovoice"
 	"github.com/cyberverse/server/internal/livekit"
 	"github.com/cyberverse/server/internal/orchestrator"
 	ragstore "github.com/cyberverse/server/internal/rag"
@@ -25,8 +26,9 @@ type Router struct {
 	ragStore   *ragstore.Store
 	envPath    string
 	configPath string
-	modelsDir  string
-	mux        *http.ServeMux
+	modelsDir          string
+	doubaoVoiceCatalog *doubaovoice.Catalog
+	mux                *http.ServeMux
 }
 
 func NewRouter(
@@ -73,6 +75,8 @@ func NewRouter(
 func (r *Router) registerRoutes() {
 	r.mux.HandleFunc("GET /api/v1/health", r.handleHealth)
 	r.mux.HandleFunc("GET /api/v1/components", r.handleListComponents)
+	r.mux.HandleFunc("GET /api/v1/tts/doubao/voices/{voice_type}/preview", r.handleDoubaoVoicePreviewMeta)
+	r.mux.HandleFunc("GET /api/v1/tts/doubao/voices/{voice_type}/preview/audio", r.handleDoubaoVoicePreviewAudio)
 	r.mux.HandleFunc("GET /api/v1/baidu-xiling/figures/{figure_id}", r.handleGetBaiduXilingFigure)
 	r.mux.HandleFunc("GET /api/v1/xunfei/avatars/{avatar_id}", r.handleGetXunfeiAvatar)
 	r.mux.HandleFunc("GET /api/v1/xunfei/sessions/{id}/stream.flv", r.handleXunfeiAvatarStream)

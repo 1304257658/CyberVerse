@@ -10,6 +10,7 @@ import { useCharacterStore } from '../stores/characters'
 import type { AgentExtensionConfig, AvatarBackend, BaiduXilingCharacterConfig, CharacterComponents, CharacterForm, ComponentOption, ComponentsResponse, ImageInfo, XunfeiAvatarConfig } from '../types'
 import { DOUBAO_TTS_VOICE_OPTIONS, GEMINI_LIVE_VOICE_OPTIONS, GROK_VOICE_OPTIONS, OPENAI_REALTIME_VOICE_OPTIONS, OPENAI_VOICE_OPTIONS, QWEN_OMNI_VOICE_OPTIONS, QWEN_TTS_MODEL_OPTIONS, QWEN_TTS_VOICE_OPTIONS, VOICE_OPTIONS } from '../types'
 import { uploadAvatar, getCharacterImages, deleteCharacterImage, activateCharacterImage, testCharacterVoice, getComponents, getBaiduXilingFigure, getXunfeiAvatar } from '../services/api'
+import { useDoubaoVoicePreview } from '../composables/useDoubaoVoicePreview'
 import {
   DEFAULT_COSYVOICE_V3_VOICE,
   DEFAULT_DOUBAO_TTS_VOICE,
@@ -79,6 +80,12 @@ const voiceError = ref('')
 const testingVoice = ref(false)
 const voiceTestStatus = ref<'success' | 'error' | null>(null)
 const voiceTestMessage = ref('')
+const {
+  previewingVoice,
+  previewError: doubaoPreviewError,
+  previewVoice: previewDoubaoVoice,
+  stopPreview: stopDoubaoPreview,
+} = useDoubaoVoicePreview()
 const showModeHelp = ref(false)
 const hydratingCharacter = ref(false)
 const baiduLookupLoading = ref(false)
@@ -937,6 +944,24 @@ function handleDeleteImage(filename: string) {
   deletedImageFilenames.value = new Set([...deletedImageFilenames.value, filename])
 }
 
+const canDoubaoOfficialPreview = computed(() =>
+  usesDoubaoTTS.value
+  && voiceMode.value === 'official'
+  && isDoubaoTTSVoiceType(form.value.voice_type.trim()),
+)
+
+async function handlePreviewDoubaoVoice() {
+  if (!canDoubaoOfficialPreview.value) return
+  await previewDoubaoVoice(form.value.voice_type.trim())
+}
+
+watch(() => form.value.voice_type, () => {
+  stopDoubaoPreview()
+})
+watch(voiceMode, () => {
+  stopDoubaoPreview()
+})
+
 async function handleCheckVoice() {
   voiceError.value = ''
   clearVoiceTestResult()
@@ -1570,7 +1595,10 @@ const pageTitle = computed(() =>
               </div>
               <div v-else class="block md:col-span-2 md:col-start-2">
                 <span class="text-[12px] font-medium text-cv-text-muted">{{ t('common.voice') }}</span>
-                <div class="mt-1.5 grid gap-3 lg:grid-cols-[184px_minmax(0,1fr)_96px]">
+                <div
+                  class="mt-1.5 grid gap-3"
+                  :class="usesDoubaoTTS ? 'lg:grid-cols-[184px_minmax(0,1fr)_72px_72px]' : 'lg:grid-cols-[184px_minmax(0,1fr)_96px]'"
+                >
                   <div class="cv-pi-segment h-[42px] min-w-0 grid-cols-2">
                     <button
                       type="button"
@@ -1619,6 +1647,17 @@ const pageTitle = computed(() =>
                     </span>
                   </div>
                   <button
+                    v-if="usesDoubaoTTS && voiceMode === 'official'"
+                    type="button"
+                    :title="t('characterEdit.previewListenHint')"
+                    :disabled="!canDoubaoOfficialPreview"
+                    :class="{ 'opacity-40 cursor-not-allowed': !canDoubaoOfficialPreview }"
+                    class="cv-pi-button cv-pi-button--compact h-[42px] w-full min-w-0 px-1"
+                    @click="handlePreviewDoubaoVoice"
+                  >
+                    {{ previewingVoice === form.voice_type ? t('characterEdit.previewStop') : t('characterEdit.previewListen') }}
+                  </button>
+                  <button
                     type="button"
                     @click="handleCheckVoice"
                     :disabled="testingVoice || !canCheckVoice"
@@ -1628,8 +1667,20 @@ const pageTitle = computed(() =>
                     {{ t('common.check') }}
                   </button>
                 </div>
+                <p
+                  v-if="usesDoubaoTTS && voiceMode === 'custom'"
+                  class="mt-2 text-[11px] leading-5 text-cv-text-muted"
+                >
+                  {{ t('characterEdit.doubaoCloneNoPreview') }}
+                </p>
+                <p
+                  v-if="usesDoubaoTTS && voiceMode === 'official' && doubaoPreviewError"
+                  class="mt-2 text-[11px] leading-5 text-cv-danger"
+                >
+                  {{ t('characterEdit.previewVoiceFailed') }}
+                </p>
                 <p v-if="usesDoubaoTTS && voiceMode === 'official'" class="mt-2 text-[11px] leading-5 text-cv-text-muted">
-                  {{ t('characterEdit.canPreviewAt') }}
+                  {{ t('characterEdit.doubaoOfficialPreviewHint') }}
                   <a
                     :href="DOUBAO_TTS_VOICE_LIST_URL"
                     target="_blank"
@@ -1638,7 +1689,6 @@ const pageTitle = computed(() =>
                   >
                     {{ t('characterEdit.doubaoTTSVoiceList') }}
                   </a>
-                  {{ t('characterEdit.previewVoice') }}
                 </p>
                 <p v-if="voiceError" class="mt-2 text-[11px] text-cv-danger">{{ voiceError }}</p>
                 <p

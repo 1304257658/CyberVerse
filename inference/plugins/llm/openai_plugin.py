@@ -1,9 +1,11 @@
 import base64
 import os
-from typing import AsyncIterator
+from typing import AsyncIterator, Any
 
 from inference.core.types import LLMResponseChunk, PluginConfig
 from inference.plugins.llm.base import LLMPlugin
+from inference.plugins.llm.tool_calling.config import ToolCallingSettings
+from inference.plugins.llm.tool_calling.loop import append_capability_system_message, generate_with_tool_loop
 
 SENTENCE_ENDERS = {"。", "！", "？", ".", "!", "?", "；", ";", "\n"}
 
@@ -18,6 +20,7 @@ class OpenAILLMPlugin(LLMPlugin):
         self.temperature = 0.7
         self.system_prompt = ""
         self.extra_body: dict = {}
+        self.tool_calling = ToolCallingSettings()
 
     async def initialize(self, config: PluginConfig) -> None:
         from openai import AsyncOpenAI
@@ -37,6 +40,9 @@ class OpenAILLMPlugin(LLMPlugin):
         self.system_prompt = config.params.get("system_prompt", "")
         extra_body = config.params.get("extra_body", {})
         self.extra_body = extra_body if isinstance(extra_body, dict) else {}
+        shared_tc = config.shared.get("tool_calling") if isinstance(config.shared.get("tool_calling"), dict) else {}
+        local_tc = config.params.get("tool_calling") if isinstance(config.params.get("tool_calling"), dict) else {}
+        self.tool_calling = ToolCallingSettings.merge(shared_tc, local_tc)
 
     @staticmethod
     def _format_message(message: dict) -> dict:
@@ -70,7 +76,24 @@ class OpenAILLMPlugin(LLMPlugin):
         has_system_message = any(message.get("role") == "system" for message in full_messages)
         if self.system_prompt and not has_system_message:
             full_messages = [{"role": "system", "content": self.system_prompt}] + full_messages
+        full_messages = append_capability_system_message(full_messages, self.tool_calling)
 
+        if self.tool_calling.tools_effectively_enabled():
+            async for chunk in generate_with_tool_loop(
+                client=self.client,
+                model=self.model,
+                temperature=self.temperature,
+                extra_body=self.extra_body,
+                messages=full_messages,
+                settings=self.tool_calling,
+            ):
+                yield chunk
+            return
+
+        async for chunk in self._stream_completion(full_messages):
+            yield chunk
+
+    async def _stream_completion(self, full_messages: list[dict[str, Any]]) -> AsyncIterator[LLMResponseChunk]:
         accumulated = ""
         create_kwargs = {
             "model": self.model,

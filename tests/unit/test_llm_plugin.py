@@ -48,6 +48,7 @@ async def test_openai_plugin_does_not_prepend_default_when_system_message_exists
 
     assert chunks[-1].is_final is True
     messages = plugin.client.chat.completions.kwargs["messages"]
-    assert [message["content"] for message in messages if message["role"] == "system"] == [
-        "request system"
-    ]
+    system_messages = [message["content"] for message in messages if message["role"] == "system"]
+    assert len(system_messages) == 1
+    assert system_messages[0].endswith("request system")
+    assert "未启用" in system_messages[0]

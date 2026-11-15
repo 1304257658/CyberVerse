@@ -29,6 +29,22 @@ warmup:
 inference:
     # Omni, LLM, embedding, TTS, and ASR provider definitions are loaded from
     # infra/config/*_models/ and optional local config/*_models/ overrides.
+    # Shared defaults for standard LLM tool calling (per-model overrides in llm_models/*.yaml).
+    tool_calling:
+        enabled: false
+        max_rounds: 3
+        round_timeout_s: 45
+        total_timeout_s: 120
+        max_tool_result_chars: 8000
+        max_concurrent_tools: 2
+        tools:
+            web_search:
+                enabled: false
+                provider: tavily
+                api_key: "${TAVILY_API_KEY}"
+        mcp:
+            enabled: false
+            servers: []
     avatar:
         # Set to false for pure voice sessions. Cached idle videos are still
         # served, but realtime speaking video and new idle video generation stop.

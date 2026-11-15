@@ -59,6 +59,33 @@ logger = logging.getLogger(__name__)
 PLAYBACK_FPS = 25
 SAMPLE_RATE = 16000
 WORKER_SCRIPT = Path(__file__).resolve().parent / "audiocpp_flashhead_worker.py"
+# Production default on QAQ (RTX 3070 8GB). Higher values are opt-in test profiles only.
+_DEFAULT_FLASHHEAD_RES = 512
+_ALLOWED_RES_PROFILES = {
+    512: "default_512",
+    720: "candidate_720_square",
+}
+
+
+def _validate_resolution(height: int, width: int, params: dict) -> None:
+    """Reject upscale-to-720 configs unless explicitly marked as a test candidate."""
+    if height != width:
+        raise ValueError(
+            f"audiocpp_flashhead requires square height=width (got {width}x{height}); "
+            "do not use 1280x720 without native model support"
+        )
+    allow_test = bool(params.get("allow_resolution_test_profile", False))
+    if height > _DEFAULT_FLASHHEAD_RES and not allow_test:
+        raise ValueError(
+            f"audiocpp_flashhead native output above {_DEFAULT_FLASHHEAD_RES}px requires "
+            "allow_resolution_test_profile: true and on-device validation (see "
+            "infra/config/avatar_models/audiocpp_flashhead_720_candidate.yaml)"
+        )
+    if height not in _ALLOWED_RES_PROFILES and height != _DEFAULT_FLASHHEAD_RES:
+        raise ValueError(
+            f"unsupported audiocpp_flashhead resolution {height}; allowed test sizes: "
+            f"{sorted(_ALLOWED_RES_PROFILES)}"
+        )
 
 
 def _audio_bytes_to_float32_mono(data: bytes, format_hint: str) -> np.ndarray:
@@ -290,6 +317,7 @@ class AudioCppFlashHeadAvatarPlugin(AvatarPlugin):
         self._metrics_path = str(p.get("metrics_log", "") or "")
         height = int(p.get("height", 512))
         width = int(p.get("width", 512))
+        _validate_resolution(height, width, p)
         env = os.environ.copy()
         for key in ("VIRTUAL_ENV", "PYTHONHOME"):
             env.pop(key, None)

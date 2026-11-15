@@ -46,6 +46,10 @@ RUNCRATE_API_KEY=your_runcrate_api_key
 # DeepSeek OpenAI-compatible LLM models (https://api.deepseek.com).
 DEEPSEEK_API_KEY=your_deepseek_api_key
 
+# Optional web search for standard DeepSeek tool calling (enable in llm_models/deepseek.yaml).
+TAVILY_API_KEY=your_tavily_api_key
+BRAVE_SEARCH_API_KEY=your_brave_search_api_key
+
 # Digital human providers
 
 # Baidu Xiling live avatar and offline video synthesis.

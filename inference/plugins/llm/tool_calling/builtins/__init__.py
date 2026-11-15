@@ -1,0 +1,1 @@
+"""Built-in standard-pipeline LLM tools (no shell/MCP execution by default)."""

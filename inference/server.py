@@ -108,6 +108,10 @@ class InferenceServer:
                 shared["omni"] = omni
         if category == "persona":
             shared["runtime_config"] = self.config
+        if category == "llm":
+            tool_calling = self.config.get("inference", {}).get("tool_calling")
+            if isinstance(tool_calling, dict):
+                shared["tool_calling"] = tool_calling
         return PluginConfig(
             plugin_name=full_name,
             params=params,

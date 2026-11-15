@@ -8,3 +8,21 @@ deepseek:
     extra_body:
         thinking:
             type: "disabled" # Non-thinking mode for faster spoken replies.
+    # Standard-pipeline tool calling (bounded; disabled until provider keys are set).
+    tool_calling:
+        enabled: false
+        max_rounds: 3
+        round_timeout_s: 45
+        total_timeout_s: 120
+        max_tool_result_chars: 8000
+        max_concurrent_tools: 2
+        tools:
+            web_search:
+                enabled: false
+                provider: tavily # or brave
+                api_key: "${TAVILY_API_KEY}"
+                max_results: 5
+                timeout_s: 15
+        mcp:
+            enabled: false
+            servers: []

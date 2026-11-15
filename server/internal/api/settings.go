@@ -329,6 +329,46 @@ var modelGPUKeyOrder = map[string][]string{
 // Readonly keys in flash_head infer_params.
 var inferParamsReadonly = map[string]bool{}
 
+// audiocppFlashheadHotReloadKeys apply on next SetAvatar / utterance without inference restart.
+var audiocppFlashheadHotReloadKeys = map[string]bool{
+	"height":                        true,
+	"width":                         true,
+	"allow_resolution_test_profile": true,
+	"num_inference_steps":           true,
+	"seed":                          true,
+	"color_correction_strength":     true,
+	"metrics_log":                   true,
+}
+
+func isAudiocppHotReloadPath(modelName, fullPath string) bool {
+	if modelName != "audiocpp_flashhead" {
+		return false
+	}
+	if strings.Contains(fullPath, ".buffering.") {
+		return true
+	}
+	const prefix = "inference.avatar." + modelName + "."
+	if !strings.HasPrefix(fullPath, prefix) {
+		return false
+	}
+	key := strings.TrimPrefix(fullPath, prefix)
+	key = strings.SplitN(key, ".", 2)[0]
+	return audiocppFlashheadHotReloadKeys[key]
+}
+
+func launchParamRequiresRestart(modelName, fullPath string) bool {
+	if isAudiocppHotReloadPath(modelName, fullPath) {
+		return false
+	}
+	if strings.HasPrefix(fullPath, "inference.avatar.runtime.") {
+		return true
+	}
+	if strings.HasPrefix(fullPath, "inference.avatar."+modelName+".infer_params.") {
+		return true
+	}
+	return true
+}
+
 func normalizeAvatarModelName(name string) string {
 	name = strings.TrimSpace(name)
 	if strings.HasPrefix(name, "avatar.") {
@@ -527,7 +567,7 @@ func (r *Router) buildLaunchSections(modelName string) []launchConfigSectionJSON
 						Path:            modelPath + "." + key,
 						Value:           config.NodeValue(node, true),
 						Readonly:        hasMeta && meta.Readonly,
-						RequiresRestart: true,
+						RequiresRestart: launchParamRequiresRestart(modelName, modelPath+"."+key),
 					}
 					if hasMeta && len(meta.Options) > 0 {
 						p.Options = meta.Options
@@ -790,9 +830,17 @@ func (r *Router) handleUpdateLaunchConfig(w http.ResponseWriter, req *http.Reque
 		}
 	}
 
+	requiresRestart := false
+	for _, p := range body.Params {
+		if launchParamRequiresRestart(body.Model, p.Path) {
+			requiresRestart = true
+			break
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]any{
 		"status":           "saved",
-		"requires_restart": true,
+		"requires_restart": requiresRestart,
 	})
 }
 

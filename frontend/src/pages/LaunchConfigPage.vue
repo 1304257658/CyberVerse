@@ -184,7 +184,7 @@ async function saveConfig() {
     if (resp.requires_restart) {
       saveMessage.value = t('launch.savedRequiresRestart')
     } else {
-      saveMessage.value = t('launch.saved')
+      saveMessage.value = t('launch.savedNextSession')
     }
   } catch (e) {
     errorMessage.value = t('launch.saveFailed')

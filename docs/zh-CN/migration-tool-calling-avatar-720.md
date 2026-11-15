@@ -53,3 +53,29 @@ tool_calling:
 | 工具调用代码与单测 | 已完成 |
 | 720 保护逻辑与基准脚本 | 已完成 |
 | QAQ 真机 720 VRAM/FPS/画质对比 | **待测** |
+
+## 配置热加载（audiocpp_flashhead）
+
+### 保存后下一轮生效（无需重启 inference）
+
+在 **`SetAvatar`** 与 **`GenerateStream` 新一句开始** 时从磁盘重读 `load_config` 合并结果：
+
+- `height` / `width` / `allow_resolution_test_profile`
+- `num_inference_steps` / `seed` / `color_correction_strength`
+- `buffering.*`（保留已测 `gen_fps` / `bias`）
+- `metrics_log`
+- DeepSeek 等 LLM：`temperature`、`model`、`tool_calling.*`（每轮 `generate_stream` 重读）
+
+即使参考图 sha1 未变，只要上述编码相关字段变化，会重新执行 worker `op=avatar`。
+
+### 仍须重启 inference
+
+变更仅记录告警、不偷偷应用：
+
+- `lib_path`、`model_path`、`exec_plan`、`backend`、`device`、`threads`
+- `python`、`ld_library_path`、`CUDA_VISIBLE_DEVICES`、`world_size`
+- `plugin_class`、监听端口、TURN、以及 `config/env` 密钥
+
+`flash_head` / `live_act` 等其它头像后端当前仍按原逻辑视为需重启（未在本轮做 GPU 权重热切换）。
+
+**操作建议：** 在 Launch 页改 720 后点保存 → 再点「启动数字人」或开始新一句；无需重启整个 inference 进程。WebRTC 轨道按实际帧尺寸编码，无固定 512 缓存。

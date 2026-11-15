@@ -51,6 +51,13 @@ from typing import AsyncIterator
 
 import numpy as np
 
+from inference.core.hot_reload import (
+    apply_audiocpp_hot_params,
+    encode_signature,
+    load_active_avatar_params,
+    log_startup_locked_drift,
+    snapshot_startup_locked,
+)
 from inference.core.types import AudioChunk, PluginConfig, VideoChunk
 from inference.plugins.avatar.base import AvatarPlugin
 
@@ -214,22 +221,26 @@ class _WorkerProcess:
 class AdaptiveLead:
     """Runtime estimate of how much video to buffer before playback starts."""
 
-    def __init__(self, cfg: dict, chunk_s: float) -> None:
+    def reconfigure(self, cfg: dict, chunk_s: float) -> None:
+        """Apply buffering.* from disk while keeping measured gen_fps and bias."""
         self.chunk_s = chunk_s
         self.min_lead_s = float(cfg.get("min_lead_s", 0.3))
         self.max_lead_s = float(cfg.get("max_lead_s", 8.0))
         self.safety_s = float(cfg.get("safety_s", 0.3))
         self.alpha = float(cfg.get("gen_fps_ewma_alpha", 0.3))
-        self.gen_fps = float(cfg.get("initial_gen_fps", 20.0))
         self.utt_alpha = float(cfg.get("utterance_ewma_alpha", 0.3))
-        self.utterance_s = float(cfg.get("initial_utterance_s", 6.0))
         self.unknown_cap_s = float(cfg.get("unknown_duration_cap_s", 20.0))
-        self.bias_s = 0.0
         self.bias_gain = float(cfg.get("underrun_bias_gain", 1.0))
         self.bias_step_s = float(cfg.get("underrun_bias_step_s", 0.5))
         self.bias_max_s = float(cfg.get("bias_max_s", 4.0))
         self.bias_decay = float(cfg.get("bias_decay", 0.7))
+
+    def __init__(self, cfg: dict, chunk_s: float) -> None:
+        self.gen_fps = float(cfg.get("initial_gen_fps", 20.0))
+        self.utterance_s = float(cfg.get("initial_utterance_s", 6.0))
+        self.bias_s = 0.0
         self.first_chunk_ms_ewma: float | None = None
+        self.reconfigure(cfg, chunk_s)
 
     def observe_chunk(self, frames: int, gen_s: float) -> float:
         inst = frames / max(gen_s, 1e-3)
@@ -302,9 +313,15 @@ class AudioCppFlashHeadAvatarPlugin(AvatarPlugin):
         # (cancels) any still-open previous one instead of waiting on a lock forever.
         self._active: dict | None = None
         self._placeholder: str | None = None
+        self._config_path = ""
+        self._model_key = "audiocpp_flashhead"
+        self._startup_locked: dict = {}
+        self._last_encode_sig: tuple[int, int, int, int, float] | None = None
 
     # ------------------------------------------------------------------ setup
     async def initialize(self, config: PluginConfig) -> None:
+        self._config_path = str(config.shared.get("config_path") or "")
+        self._model_key = str(config.shared.get("avatar_model_key") or config.plugin_name.split(".", 1)[-1])
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self._init_sync, config)
 
@@ -313,6 +330,7 @@ class AudioCppFlashHeadAvatarPlugin(AvatarPlugin):
         if int(p.get("world_size", 1) or 1) != 1:
             raise ValueError("audiocpp_flashhead supports world_size=1 only")
         self._params = p
+        self._startup_locked = snapshot_startup_locked(p)
         self._buf_cfg = dict(p.get("buffering") or {})
         self._metrics_path = str(p.get("metrics_log", "") or "")
         height = int(p.get("height", 512))
@@ -373,25 +391,77 @@ class AudioCppFlashHeadAvatarPlugin(AvatarPlugin):
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(self._executor, self._set_avatar_sync, image_path, use_face_crop)
 
+    def _reload_runtime_config_sync(self) -> None:
+        if not self._config_path:
+            return
+        try:
+            fresh = load_active_avatar_params(self._config_path, self._model_key)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("audiocpp_flashhead config reload failed: %s", exc)
+            return
+        log_startup_locked_drift(self._model_key, self._startup_locked, fresh)
+        prev_sig = encode_signature(self._params)
+        self._params = apply_audiocpp_hot_params(self._params, fresh)
+        height = int(self._params.get("height", 512))
+        width = int(self._params.get("width", 512))
+        _validate_resolution(height, width, self._params)
+        self.infer_params["height"] = height
+        self.infer_params["width"] = width
+        self._metrics_path = str(self._params.get("metrics_log", "") or "")
+        new_buf = dict(self._params.get("buffering") or {})
+        if new_buf != self._buf_cfg:
+            self._buf_cfg = new_buf
+            if self._lead is not None:
+                self._lead.reconfigure(self._buf_cfg, self._chunk_s)
+        if encode_signature(self._params) != prev_sig:
+            logger.info(
+                "audiocpp_flashhead hot-reload: output %dx%d steps=%s seed=%s",
+                width,
+                height,
+                self._params.get("num_inference_steps"),
+                self._params.get("seed"),
+            )
+
+    def _encode_reference_sync(self, image_path: str) -> None:
+        assert self._worker is not None
+        p = self._params
+        sig = encode_signature(p)
+        h, _ = self._worker.call({
+            "op": "avatar",
+            "path": image_path,
+            "height": int(p.get("height", 512)),
+            "width": int(p.get("width", 512)),
+            "steps": int(p.get("num_inference_steps", 4)),
+            "seed": int(p.get("seed", 42)),
+            "color": float(p.get("color_correction_strength", 1.0)),
+        })
+        self._last_encode_sig = sig
+        logger.info("audiocpp FlashHead reference encode: %s %dx%d encode=%.0fms", image_path, sig[1], sig[0], float(h.get("encode_ms", 0)))
+
+    def _prepare_session_sync(self) -> None:
+        self._reload_runtime_config_sync()
+        path = self._avatar_path or self._placeholder
+        if not path:
+            return
+        sig = encode_signature(self._params)
+        if self._last_encode_sig == sig and self._avatar_key:
+            return
+        self._encode_reference_sync(path)
+
     def _set_avatar_sync(self, image_path: str, use_face_crop: bool) -> None:
         assert self._worker is not None
+        self._reload_runtime_config_sync()
         if use_face_crop:
             logger.info("audiocpp FlashHead: use_face_crop is not supported; using the image as-is")
         with open(image_path, "rb") as f:
             key = hashlib.sha1(f.read()).hexdigest()
-        if key == self._avatar_key:
+        sig = encode_signature(self._params)
+        if key == self._avatar_key and self._last_encode_sig == sig:
             logger.info("audiocpp FlashHead avatar unchanged (sha1=%s); reference encode skipped", key[:12])
             return
-        p = self._params
-        h, _ = self._worker.call({
-            "op": "avatar", "path": image_path,
-            "height": int(p.get("height", 512)), "width": int(p.get("width", 512)),
-            "steps": int(p.get("num_inference_steps", 4)), "seed": int(p.get("seed", 42)),
-            "color": float(p.get("color_correction_strength", 1.0)),
-        })
+        self._encode_reference_sync(image_path)
         self._avatar_key = key
         self._avatar_path = image_path
-        logger.info("audiocpp FlashHead avatar set: %s encode=%.0fms", image_path, float(h.get("encode_ms", 0)))
 
     async def reset(self) -> None:
         # Keep the encoded reference and motion state; nothing per-utterance is cached here.
@@ -422,6 +492,8 @@ class AudioCppFlashHeadAvatarPlugin(AvatarPlugin):
             yield vc
 
     async def _generate_one(self, audio_stream: AsyncIterator[AudioChunk]) -> AsyncIterator[VideoChunk]:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(self._executor, self._prepare_session_sync)
         lead = self._lead
         assert lead is not None
         cfg = self._buf_cfg

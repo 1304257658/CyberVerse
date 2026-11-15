@@ -21,10 +21,14 @@ class OpenAILLMPlugin(LLMPlugin):
         self.system_prompt = ""
         self.extra_body: dict = {}
         self.tool_calling = ToolCallingSettings()
+        self._config_path = ""
+        self._llm_model_key = ""
 
     async def initialize(self, config: PluginConfig) -> None:
         from openai import AsyncOpenAI
 
+        self._config_path = str(config.shared.get("config_path") or "")
+        self._llm_model_key = config.plugin_name.split(".", 1)[-1]
         env_base_url = (
             os.environ.get("OPENAI_BASE_URL")
             if config.plugin_name == "llm.openai"
@@ -69,9 +73,38 @@ class OpenAILLMPlugin(LLMPlugin):
             )
         return {"role": message["role"], "content": parts}
 
+    def _reload_runtime_llm_config(self) -> None:
+        if not self._config_path or not self._llm_model_key:
+            return
+        try:
+            from inference.core.config import load_config
+
+            cfg = load_config(self._config_path)
+            llm_section = (cfg.get("inference") or {}).get("llm") or {}
+            if not isinstance(llm_section, dict):
+                return
+            fresh = llm_section.get(self._llm_model_key)
+            if not isinstance(fresh, dict):
+                return
+            if "temperature" in fresh:
+                self.temperature = float(fresh.get("temperature", self.temperature))
+            if "model" in fresh:
+                self.model = str(fresh.get("model", self.model))
+            shared_tc = (cfg.get("inference") or {}).get("tool_calling")
+            local_tc = fresh.get("tool_calling")
+            self.tool_calling = ToolCallingSettings.merge(
+                shared_tc if isinstance(shared_tc, dict) else {},
+                local_tc if isinstance(local_tc, dict) else {},
+            )
+        except Exception as exc:  # noqa: BLE001
+            import logging
+
+            logging.getLogger(__name__).warning("LLM hot-reload skipped: %s", exc)
+
     async def generate_stream(
         self, messages: list[dict]
     ) -> AsyncIterator[LLMResponseChunk]:
+        self._reload_runtime_llm_config()
         full_messages = [self._format_message(message) for message in messages]
         has_system_message = any(message.get("role") == "system" for message in full_messages)
         if self.system_prompt and not has_system_message:

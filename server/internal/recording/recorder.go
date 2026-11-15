@@ -31,6 +31,41 @@ func (r *VideoRecorder) resolveOutputDir(sessionDir string) string {
 	return filepath.Join(r.cfg.OutputDir, sessionDir)
 }
 
+func ffmpegRawRGB24InputArgs(videoSize string, fps int) []string {
+	return []string{
+		"-fflags", "+genpts",
+		"-f", "rawvideo",
+		"-pixel_format", "rgb24",
+		"-video_size", videoSize,
+		"-framerate", fmt.Sprintf("%d", fps),
+		"-i", "pipe:0",
+	}
+}
+
+func ffmpegLibx264EncodeArgs(crf int) []string {
+	return []string{
+		"-c:v", "libx264",
+		"-preset", "fast",
+		"-crf", fmt.Sprintf("%d", crf),
+		"-pix_fmt", "yuv420p",
+		"-bf", "0",
+		"-fps_mode", "cfr",
+	}
+}
+
+func ffmpegFinishMuxArgs(videoTmpPath, audioTmpPath, outPath string) []string {
+	return []string{
+		"-y",
+		"-i", videoTmpPath,
+		"-i", audioTmpPath,
+		"-c:v", "copy",
+		"-c:a", "aac",
+		"-movflags", "+faststart",
+		"-shortest",
+		outPath,
+	}
+}
+
 // EncodeRGB24ToMP4 writes raw RGB24 frames plus optional mono PCM16 audio into an MP4.
 func EncodeRGB24ToMP4(outPath string, width, height, fps int, rgbChunks [][]byte, pcm []byte, sampleRate int, crf int) error {
 	if width <= 0 || height <= 0 || fps <= 0 {
@@ -58,12 +93,8 @@ func EncodeRGB24ToMP4(outPath string, width, height, fps int, rgbChunks [][]byte
 		"-hide_banner",
 		"-loglevel", "error",
 		"-y",
-		"-f", "rawvideo",
-		"-pixel_format", "rgb24",
-		"-video_size", videoSize,
-		"-framerate", fmt.Sprintf("%d", fps),
-		"-i", "pipe:0",
 	}
+	args = append(args, ffmpegRawRGB24InputArgs(videoSize, fps)...)
 
 	var audioTmpPath string
 	if len(pcm) > 0 {
@@ -89,12 +120,7 @@ func EncodeRGB24ToMP4(outPath string, width, height, fps int, rgbChunks [][]byte
 		)
 	}
 
-	args = append(args,
-		"-c:v", "libx264",
-		"-preset", "fast",
-		"-crf", fmt.Sprintf("%d", crf),
-		"-pix_fmt", "yuv420p",
-	)
+	args = append(args, ffmpegLibx264EncodeArgs(crf)...)
 	if len(pcm) > 0 {
 		args = append(args,
 			"-c:a", "aac",
@@ -179,18 +205,11 @@ func (r *VideoRecorder) BeginTurn(sessionDir, turnID string, width, height, fps 
 	videoTmpPath := filepath.Join(outDir, turnID+"-video.mp4")
 	videoSize := fmt.Sprintf("%dx%d", width, height)
 
-	cmd := exec.Command("ffmpeg", "-y",
-		"-f", "rawvideo",
-		"-pixel_format", "rgb24",
-		"-video_size", videoSize,
-		"-framerate", fmt.Sprintf("%d", fps),
-		"-i", "pipe:0",
-		"-c:v", "libx264",
-		"-preset", "fast",
-		"-crf", fmt.Sprintf("%d", r.cfg.CRF),
-		"-pix_fmt", "yuv420p",
-		videoTmpPath,
-	)
+	cmdArgs := []string{"-y"}
+	cmdArgs = append(cmdArgs, ffmpegRawRGB24InputArgs(videoSize, fps)...)
+	cmdArgs = append(cmdArgs, ffmpegLibx264EncodeArgs(r.cfg.CRF)...)
+	cmdArgs = append(cmdArgs, videoTmpPath)
+	cmd := exec.Command("ffmpeg", cmdArgs...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		log.Printf("recording: stdin pipe error: %v", err)
@@ -268,14 +287,7 @@ func (t *TurnRecording) Finish() error {
 	f.Close()
 
 	// Step 3: mux video + audio.
-	muxCmd := exec.Command("ffmpeg", "-y",
-		"-i", t.videoTmpPath,
-		"-i", audioTmpPath,
-		"-c:v", "copy",
-		"-c:a", "aac",
-		"-movflags", "+faststart",
-		t.outPath,
-	)
+	muxCmd := exec.Command("ffmpeg", ffmpegFinishMuxArgs(t.videoTmpPath, audioTmpPath, t.outPath)...)
 	if out, err := muxCmd.CombinedOutput(); err != nil {
 		log.Printf("recording: mux error: %v\n%s", err, string(out))
 		os.Remove(t.videoTmpPath)

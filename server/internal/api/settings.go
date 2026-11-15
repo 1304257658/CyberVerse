@@ -347,7 +347,7 @@ func isAudiocppHotReloadPath(modelName, fullPath string) bool {
 	if strings.Contains(fullPath, ".buffering.") {
 		return true
 	}
-	const prefix = "inference.avatar." + modelName + "."
+	prefix := "inference.avatar." + modelName + "."
 	if !strings.HasPrefix(fullPath, prefix) {
 		return false
 	}

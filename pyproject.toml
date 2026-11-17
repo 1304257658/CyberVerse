@@ -55,6 +55,7 @@ flash_head = [
     "decord",
     "xformers==0.0.32.post1",
     "librosa",
+    # Face crop: legacy mp.solutions (<=0.10.21) or Tasks FaceDetector (>=0.10.30).
     "mediapipe>=0.10.13",
     "flask",
     "nvidia-nccl-cu12==2.27.3",

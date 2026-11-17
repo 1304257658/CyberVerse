@@ -106,6 +106,8 @@ export interface Character {
   image_mode: string
   created_at: string
   updated_at: string
+  /** Durable cutoff when the user cleared live chat for this character. */
+  chat_history_cleared_at?: string
 }
 
 export type CharacterForm = Omit<Character, 'id' | 'created_at' | 'updated_at' | 'images' | 'active_image'>
@@ -117,12 +119,21 @@ export interface CharacterComponents {
   tts_model?: string
 }
 
+export interface ComponentVoiceOption {
+  value: string
+  label: string
+  label_en?: string
+}
+
 export interface ComponentOption {
   id: string
   name: string
   model: string
   default: boolean
   available: boolean
+  default_voice?: string
+  voices?: ComponentVoiceOption[]
+  tts_kind?: string
 }
 
 export interface ComponentsResponse {

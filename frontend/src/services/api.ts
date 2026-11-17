@@ -262,6 +262,12 @@ export interface ConversationMessagesResponse {
   has_more: boolean
 }
 
+export async function clearSessionChat(sessionId: string): Promise<{ status: string; cleared_at: string }> {
+  return request(`/sessions/${encodeURIComponent(sessionId)}/clear-chat`, {
+    method: 'POST',
+  })
+}
+
 export async function getConversationMessages(
   characterId: string,
   limit: number = 50,
@@ -308,6 +314,18 @@ export async function updateOfflineVideoTTS(
 
 export async function deleteCharacter(id: string): Promise<void> {
   return request(`/characters/${id}`, { method: 'DELETE' })
+}
+
+export interface DoubaoVoicePreviewMeta {
+  voice_type: string
+  name?: string
+  sample_text?: string
+  source?: string
+  play_url: string
+}
+
+export async function getDoubaoVoicePreviewMeta(voiceType: string): Promise<DoubaoVoicePreviewMeta> {
+  return request(`/tts/doubao/voices/${encodeURIComponent(voiceType)}/preview`)
 }
 
 export async function testCharacterVoice(data: { voice_provider: string; voice_type: string; model?: string }): Promise<{ status: string }> {

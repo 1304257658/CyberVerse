@@ -107,6 +107,28 @@ func TestSessionAddMessageInsertsAssistantAfterMatchingTurn(t *testing.T) {
 	}
 }
 
+func TestSessionClearChatHistory(t *testing.T) {
+	s := NewSession("test-1", ModeStandard, "char-1")
+	s.SetDialogContext([]DialogContextItem{{Role: "user", Text: "prior", Timestamp: 1}})
+	s.AddMessage(ChatMessage{Role: "user", Content: "hello"})
+	s.AddMessage(ChatMessage{Role: "assistant", Content: "world"})
+
+	clearedAt := s.ClearChatHistory()
+	if clearedAt.IsZero() {
+		t.Fatal("expected cleared timestamp")
+	}
+	if len(s.HistorySnapshot()) != 0 {
+		t.Fatalf("expected empty history, got %d", len(s.HistorySnapshot()))
+	}
+	if len(s.DialogContextSnapshot()) != 0 {
+		t.Fatalf("expected empty dialog context")
+	}
+	gotAt, ok := s.ChatHistoryClearedAtSnapshot()
+	if !ok || !gotAt.Equal(clearedAt) {
+		t.Fatalf("unexpected cleared-at snapshot: ok=%v at=%v", ok, gotAt)
+	}
+}
+
 func TestSessionDialogContextSnapshot(t *testing.T) {
 	s := NewSession("test-1", ModeOmni, "")
 	s.SetDialogContext([]DialogContextItem{

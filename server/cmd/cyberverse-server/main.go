@@ -187,12 +187,15 @@ func main() {
 		log.Printf("TURN server enabled on TCP port %d (relay IP: %s)", cfg.Pipeline.TURNPort, publicIP)
 	}
 
+	direct.ConfigureLiveVideo(cfg.Pipeline.DirectVideo)
+
 	// WebRTC API with interceptors (NACK, TWCC, GCC pacer) for direct streaming mode
 	if cfg.Pipeline.StreamingMode == "direct" {
+		dv := cfg.Pipeline.DirectVideo
 		api, estimatorCh, err := direct.NewWebRTCAPI(direct.WebRTCAPIConfig{
-			InitialBitrate: 2_500_000,
-			MinBitrate:     800_000,
-			MaxBitrate:     4_000_000,
+			InitialBitrate: dv.GCCInitialBitrateBps,
+			MinBitrate:     dv.GCCMinBitrateBps,
+			MaxBitrate:     dv.GCCMaxBitrateBps,
 		})
 		if err != nil {
 			log.Fatalf("WebRTC API setup failed: %v", err)

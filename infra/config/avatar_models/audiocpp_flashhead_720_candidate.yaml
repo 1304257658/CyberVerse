@@ -1,0 +1,20 @@
+# EXPERIMENTAL: square 720 native-generation profile for on-device validation (QAQ / RTX 3070 8GB).
+# Do NOT enable in production until scripts/benchmark_audiocpp_flashhead_resolution.py reports success.
+# Switch: inference.avatar.default: audiocpp_flashhead and merge these params into your local override,
+# or copy this file to config/avatar_models/ and point inference.avatar.default at a renamed key.
+audiocpp_flashhead_720_candidate:
+    plugin_class: "inference.plugins.avatar.audiocpp_flashhead_plugin.AudioCppFlashHeadAvatarPlugin"
+    # Inherit paths from audiocpp_flashhead.yaml in your local config/env-specific overlay.
+    height: 720
+    width: 720
+    allow_resolution_test_profile: true
+    num_inference_steps: 4
+    warmup: true
+    warmup_blocks: 2
+    buffering:
+        min_lead_s: 0.5
+        max_lead_s: 12.0
+        safety_s: 0.4
+        initial_gen_fps: 12.0
+        max_pending_audio_blocks: 32
+        max_buffer_chunks: 11

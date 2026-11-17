@@ -98,7 +98,9 @@ type Session struct {
 	// RecordingDir is the absolute path where recordings for this session are saved.
 	// Set by the orchestrator when the first recording turn begins.
 	RecordingDir string      `json:"-"`
-	Visual       VisualState `json:"-"`
+	// ChatHistoryClearedAt is set when the user clears the live chat panel (conversation cutoff).
+	ChatHistoryClearedAt time.Time `json:"-"`
+	Visual               VisualState `json:"-"`
 	visualSubs   map[chan VisualFrame]struct{}
 	mu           sync.RWMutex
 }
@@ -276,6 +278,28 @@ func (s *Session) DialogContextSnapshot() []DialogContextItem {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return append([]DialogContextItem(nil), s.DialogContext...)
+}
+
+// ClearChatHistory drops in-memory conversation turns and cross-session dialog context
+// while keeping the live session, persona, and media pipeline intact.
+func (s *Session) ClearChatHistory() time.Time {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	clearedAt := time.Now().UTC()
+	s.History = make([]ChatMessage, 0)
+	s.DialogContext = nil
+	s.ChatHistoryClearedAt = clearedAt
+	s.LastActiveAt = clearedAt
+	return clearedAt
+}
+
+func (s *Session) ChatHistoryClearedAtSnapshot() (time.Time, bool) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.ChatHistoryClearedAt.IsZero() {
+		return time.Time{}, false
+	}
+	return s.ChatHistoryClearedAt, true
 }
 
 func copyVisualFrame(frame VisualFrame) VisualFrame {

@@ -29,6 +29,22 @@ warmup:
 inference:
     # Omni, LLM, embedding, TTS, and ASR provider definitions are loaded from
     # infra/config/*_models/ and optional local config/*_models/ overrides.
+    # Shared defaults for standard LLM tool calling (per-model overrides in llm_models/*.yaml).
+    tool_calling:
+        enabled: false
+        max_rounds: 3
+        round_timeout_s: 45
+        total_timeout_s: 120
+        max_tool_result_chars: 8000
+        max_concurrent_tools: 2
+        tools:
+            web_search:
+                enabled: false
+                provider: tavily
+                api_key: "${TAVILY_API_KEY}"
+        mcp:
+            enabled: false
+            servers: []
     avatar:
         # Set to false for pure voice sessions. Cached idle videos are still
         # served, but realtime speaking video and new idle video generation stop.
@@ -94,6 +110,26 @@ pipeline:
     turn_username: "cyberverse"
     turn_password: "${TURN_PASSWORD}"
     ice_public_ip: "" # REQUIRED for remote Direct WebRTC: public hostname or IP (not 127.0.0.1). Used in turn:HOST:PORT sent to browsers.
+    # Direct WebRTC live VP8 encode + GCC (defaults match legacy hardcoded behavior).
+    direct_video:
+        target_bitrate_kbps: 1800 # Used when GCC target is unknown.
+        min_bitrate_kbps: 500
+        max_bitrate_kbps: 1800 # VP8 -b:v/-maxrate cap from GCC budget.
+        gcc_safety_percent: 65 # Apply this fraction of GCC target to VP8 encode.
+        vp8_deadline: "realtime" # libvpx -deadline (e.g. good for quality-first).
+        vp8_cpu_used: 8 # libvpx -cpu-used (lower = better quality, slower).
+        vp8_fallback_bitrate_kbps: 2000 # When encode path passes bitrate <= 0.
+        gcc_initial_bitrate_bps: 2500000 # Send-side BWE initial (direct mode).
+        gcc_min_bitrate_bps: 800000
+        gcc_max_bitrate_bps: 4000000
+    # Quality-first example (not defaults; requires server restart):
+    # direct_video:
+    #     max_bitrate_kbps: 4000
+    #     min_bitrate_kbps: 3500
+    #     gcc_safety_percent: 95
+    #     vp8_deadline: "good"
+    #     vp8_cpu_used: 4
+    #     gcc_max_bitrate_bps: 8000000
 
 recording:
     # Enables per-turn MP4, raw WAV, and transcript files.

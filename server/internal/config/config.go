@@ -67,7 +67,8 @@ type SessionConfig struct {
 
 type PipelineConfig struct {
 	DefaultMode        string            `yaml:"default_mode"`
-	StreamingMode      string            `yaml:"streaming_mode"` // "direct" (default, P2P WebRTC) or "livekit"
+	StreamingMode      string            `yaml:"streaming_mode"` // "direct" (default, P2P WebRTC) or "livekit"`
+	DirectVideo        DirectVideoConfig `yaml:"direct_video,omitempty"`
 	VisualInput        VisualInputConfig `yaml:"visual_input,omitempty"`
 	RAG                RAGConfig         `yaml:"rag,omitempty"`
 	ICEServers         []ICEServer       `yaml:"ice_servers,omitempty"`
@@ -253,6 +254,7 @@ func Load(path string) (*Config, error) {
 	if cfg.Recording.CRF == 0 {
 		cfg.Recording.CRF = 23
 	}
+	cfg.Pipeline.DirectVideo = cfg.Pipeline.DirectVideo.WithDefaults()
 	if cfg.Plugins.LLM.Default == "" {
 		cfg.Plugins.LLM.Default = "qwen"
 	}

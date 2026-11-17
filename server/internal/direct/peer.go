@@ -54,11 +54,6 @@ func directVoiceTrace(event string, label string, format string, args ...any) {
 type SignalingFunc func(sessionID string, msg map[string]any)
 
 const (
-	defaultDirectVideoBitrateKbps = 1800
-	minDirectVideoBitrateKbps     = 500
-	maxDirectVideoBitrateKbps     = 1800
-	videoBitrateSafetyPercent     = 65
-
 	maxAudioDelayMS          int64 = 800
 	audioDelayStepMS         int64 = 160
 	audioDelayFeedbackMaxAge       = 4 * time.Second
@@ -619,16 +614,17 @@ func (p *DirectPeer) WaitAVDrain(timeout time.Duration) {
 }
 
 func (p *DirectPeer) currentVideoBitrateKbps() int {
+	cfg := liveVideoConfig()
 	targetBps := p.targetBitrateBps.Load()
 	if targetBps <= 0 {
-		return defaultDirectVideoBitrateKbps
+		return cfg.TargetBitrateKbps
 	}
-	kbps := int((targetBps * videoBitrateSafetyPercent) / 100 / 1000)
-	if kbps < minDirectVideoBitrateKbps {
-		return minDirectVideoBitrateKbps
+	kbps := int((targetBps * int64(cfg.GCCSafetyPercent)) / 100 / 1000)
+	if kbps < cfg.MinBitrateKbps {
+		return cfg.MinBitrateKbps
 	}
-	if kbps > maxDirectVideoBitrateKbps {
-		return maxDirectVideoBitrateKbps
+	if kbps > cfg.MaxBitrateKbps {
+		return cfg.MaxBitrateKbps
 	}
 	return kbps
 }
@@ -695,6 +691,7 @@ func (p *DirectPeer) runEncoder() {
 			p.injectAVCalibrationMarker(raw)
 		}
 
+		enc := liveVideoConfig()
 		vp8Samples, err := mediapeer.EncodeRGBChunkToVP8SamplesWithBitrate(
 			raw.RGB,
 			raw.Width,
@@ -702,6 +699,11 @@ func (p *DirectPeer) runEncoder() {
 			raw.NumFrames,
 			raw.FPS,
 			videoBitrateKbps,
+			mediapeer.VP8EncodeParams{
+				Deadline:            enc.VP8Deadline,
+				CPUUsed:             enc.VP8CPUUsed,
+				FallbackBitrateKbps: enc.VP8FallbackBitrateKbps,
+			},
 		)
 		if err != nil {
 			log.Printf("[DirectPeer] encode failed: %v", err)

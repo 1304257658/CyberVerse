@@ -184,7 +184,7 @@ async function saveConfig() {
     if (resp.requires_restart) {
       saveMessage.value = t('launch.savedRequiresRestart')
     } else {
-      saveMessage.value = t('launch.saved')
+      saveMessage.value = t('launch.savedNextSession')
     }
   } catch (e) {
     errorMessage.value = t('launch.saveFailed')
@@ -280,6 +280,12 @@ async function launch() {
               {{ t('launch.runtimeMismatch', { configured: configuredDefaultModel, active: activeAvatarModel }) }}
             </div>
             <div v-if="saveMessage" class="notice success">{{ saveMessage }}</div>
+
+            <div class="launch-action-row">
+              <button class="cv-pi-button cv-pi-button--primary" type="button" :disabled="connecting || !canLaunch" @click="launch">
+                {{ connecting ? t('launch.launching') : t('launch.launch') }}
+              </button>
+            </div>
 
             <div v-if="isBaiduXilingCharacter" class="config-card">
               <div
@@ -381,12 +387,9 @@ async function launch() {
               </div>
             </div>
 
-            <div class="action-row">
+            <div class="action-row action-row--save">
               <button class="cv-pi-button" type="button" :disabled="!hasChanges || saving" @click="saveConfig">
                 {{ saving ? t('common.saving') : t('launch.saveConfig') }}
-              </button>
-              <button class="cv-pi-button cv-pi-button--primary" type="button" :disabled="connecting || !canLaunch" @click="launch">
-                {{ connecting ? t('launch.launching') : t('launch.launch') }}
               </button>
             </div>
           </section>
@@ -665,6 +668,14 @@ async function launch() {
 .lock-icon {
   color: #505864;
   font-size: 12px;
+}
+
+.launch-action-row {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 14px;
+  padding-bottom: 8px;
 }
 
 .action-row {

@@ -69,22 +69,47 @@ type AVSegment struct {
 
 const defaultVP8BitrateKbps = 2000
 
+// VP8EncodeParams controls libvpx encode quality/speed for live Direct WebRTC chunks.
+type VP8EncodeParams struct {
+	Deadline            string
+	CPUUsed             int
+	FallbackBitrateKbps int
+}
+
+func resolveVP8Encode(bitrateKbps int, enc VP8EncodeParams) (resolvedBitrate, fallback int, deadline string, cpuUsed int) {
+	fallback = enc.FallbackBitrateKbps
+	if fallback <= 0 {
+		fallback = defaultVP8BitrateKbps
+	}
+	resolvedBitrate = bitrateKbps
+	if resolvedBitrate <= 0 {
+		resolvedBitrate = fallback
+	}
+	deadline = enc.Deadline
+	if deadline == "" {
+		deadline = "realtime"
+	}
+	cpuUsed = enc.CPUUsed
+	if cpuUsed <= 0 {
+		cpuUsed = 8
+	}
+	return resolvedBitrate, fallback, deadline, cpuUsed
+}
+
 // EncodeRGBChunkToVP8Samples encodes a contiguous RGB24 buffer to VP8 samples.
 func EncodeRGBChunkToVP8Samples(rgb []byte, width, height, numFrames, fps int) ([]media.Sample, error) {
-	return EncodeRGBChunkToVP8SamplesWithBitrate(rgb, width, height, numFrames, fps, defaultVP8BitrateKbps)
+	return EncodeRGBChunkToVP8SamplesWithBitrate(rgb, width, height, numFrames, fps, defaultVP8BitrateKbps, VP8EncodeParams{})
 }
 
 // EncodeRGBChunkToVP8SamplesWithBitrate encodes a contiguous RGB24 buffer to VP8 samples.
-func EncodeRGBChunkToVP8SamplesWithBitrate(rgb []byte, width, height, numFrames, fps int, bitrateKbps int) ([]media.Sample, error) {
+func EncodeRGBChunkToVP8SamplesWithBitrate(rgb []byte, width, height, numFrames, fps int, bitrateKbps int, enc VP8EncodeParams) ([]media.Sample, error) {
 	if numFrames <= 0 || width <= 0 || height <= 0 {
 		return nil, nil
 	}
 	if fps <= 0 {
 		fps = 25
 	}
-	if bitrateKbps <= 0 {
-		bitrateKbps = defaultVP8BitrateKbps
-	}
+	bitrateKbps, _, deadline, cpuUsed := resolveVP8Encode(bitrateKbps, enc)
 	want := width * height * 3 * numFrames
 	if len(rgb) < want {
 		return nil, fmt.Errorf("rgb buffer too small: got %d want >= %d", len(rgb), want)
@@ -110,8 +135,8 @@ func EncodeRGBChunkToVP8SamplesWithBitrate(rgb []byte, width, height, numFrames,
 		"-i", "pipe:0",
 		"-frames:v", fmt.Sprintf("%d", numFrames),
 		"-c:v", "libvpx",
-		"-deadline", "realtime",
-		"-cpu-used", "8",
+		"-deadline", deadline,
+		"-cpu-used", fmt.Sprintf("%d", cpuUsed),
 		"-row-mt", "1",
 		"-b:v", bitrateArg,
 		"-maxrate", bitrateArg,

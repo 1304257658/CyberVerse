@@ -29,7 +29,7 @@ func TestEncodeRGBChunkToVP8SamplesUsesInterFramesInsideSegment(t *testing.T) {
 		}
 	}
 
-	samples, err := EncodeRGBChunkToVP8SamplesWithBitrate(rgb, width, height, numFrames, fps, 500)
+	samples, err := EncodeRGBChunkToVP8SamplesWithBitrate(rgb, width, height, numFrames, fps, 500, VP8EncodeParams{})
 	if err != nil {
 		t.Fatal(err)
 	}

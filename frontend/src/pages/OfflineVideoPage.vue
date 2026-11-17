@@ -27,6 +27,17 @@ import {
   isQwenTTSVoiceType,
   localizedVoiceOptions,
 } from '../utils/voice'
+import { useDoubaoVoicePreview } from '../composables/useDoubaoVoicePreview'
+import { characterCardOfflineTTS, hasExplicitOfflineVideoTTS } from '../utils/offlineVideoTtsDefaults'
+import {
+  configuredTTSDefaultVoice,
+  configuredTTSVoices,
+  findTTSComponent,
+  isCloudQwenCosyVoiceTTS,
+  isConfiguredLocalTTSVoice,
+  isLocalCosyVoice3TTS,
+} from '../utils/ttsProviderCapabilities'
+import { LOCAL_COSYVOICE3_DEFAULT_VOICE } from '../utils/voice'
 
 const route = useRoute()
 const router = useRouter()
@@ -77,6 +88,13 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let highlightTimer: ReturnType<typeof setTimeout> | null = null
 let offlineTTSSaveTimer: ReturnType<typeof setTimeout> | null = null
 let hydratingOfflineTTS = false
+
+const {
+  previewingVoice: offlinePreviewingVoice,
+  previewError: offlineDoubaoPreviewError,
+  previewVoice: previewOfflineDoubaoVoice,
+  stopPreview: stopOfflineDoubaoPreview,
+} = useDoubaoVoicePreview()
 
 const JOBS_PER_PAGE = 9
 const BAIDU_XILING_COMMON_ASSETS_URL = 'https://xiling.cloud.baidu.com/open/commonAssets/list'
@@ -186,6 +204,10 @@ const selectedOfflineTTSComponent = computed(() =>
   componentCatalog.value.tts.find(item => item.id === offlineTTSProvider.value),
 )
 const offlineTTSModelOptions = computed(() => {
+  if (isOfflineLocalCosyVoice3TTS.value) {
+    const model = selectedOfflineTTSComponent.value?.model || ''
+    return model ? [{ label: model, value: model }] : []
+  }
   if (offlineTTSProvider.value === 'qwen') {
     const hasCurrent = QWEN_TTS_MODEL_OPTIONS.some(option => option.value === offlineTTSModel.value)
     return hasCurrent || !offlineTTSModel.value
@@ -195,8 +217,11 @@ const offlineTTSModelOptions = computed(() => {
   const model = selectedOfflineTTSComponent.value?.model || ''
   return model ? [{ label: model, value: model }] : []
 })
+const isOfflineLocalCosyVoice3TTS = computed(() =>
+  isLocalCosyVoice3TTS(offlineTTSProvider.value, selectedOfflineTTSComponent.value),
+)
 const isOfflineCosyVoiceTTS = computed(() =>
-  offlineTTSProvider.value === 'qwen' && isCosyVoiceTTSModel(offlineTTSModel.value)
+  isCloudQwenCosyVoiceTTS(offlineTTSProvider.value, offlineTTSModel.value),
 )
 const isOfflineCosyVoiceCloneOnlyTTS = computed(() =>
   isOfflineCosyVoiceTTS.value && isCosyVoiceCloneOnlyModel(offlineTTSModel.value)
@@ -205,6 +230,9 @@ const isOfflineCosyVoiceBuiltinTTS = computed(() =>
   isOfflineCosyVoiceTTS.value && isCosyVoiceBuiltinModel(offlineTTSModel.value)
 )
 const offlineTTSVoiceOptions = computed(() => {
+  if (isOfflineLocalCosyVoice3TTS.value) {
+    return localizedVoiceOptions(configuredTTSVoices(selectedOfflineTTSComponent.value), locale.value)
+  }
   if (offlineTTSProvider.value === 'openai') {
     return localizedVoiceOptions(OPENAI_VOICE_OPTIONS, locale.value)
   }
@@ -217,6 +245,11 @@ const offlineCosyVoiceOfficialOptions = computed(() => localizedVoiceOptions(
   cosyVoiceBuiltinVoiceOptions(offlineTTSModel.value),
   locale.value,
 ))
+const canOfflineDoubaoOfficialPreview = computed(() =>
+  showLocalTextTTSSettings.value
+  && offlineTTSProvider.value === 'doubao'
+  && isDoubaoTTSVoiceType(offlineTTSVoice.value.trim()),
+)
 const supportedAudioExtensions = new Set(['wav', 'pcm', 's16le'])
 const audioAccept = '.wav,.pcm,.s16le,audio/wav,audio/wave,audio/x-wav'
 const isTTSPersonRequired = computed(() => isBaiduXilingCharacter.value && inputType.value === 'text')
@@ -288,10 +321,13 @@ function defaultOfflineTTSProvider(): string {
 
 function defaultOfflineTTSModel(provider: string): string {
   if (provider === 'qwen') return QWEN_TTS_MODEL_OPTIONS[0]?.value || selectedOfflineTTSComponent.value?.model || ''
-  return selectedOfflineTTSComponent.value?.model || ''
+  return findTTSComponent(componentCatalog.value, provider)?.model || selectedOfflineTTSComponent.value?.model || ''
 }
 
 function defaultOfflineTTSVoice(provider: string): string {
+  if (isLocalCosyVoice3TTS(provider, findTTSComponent(componentCatalog.value, provider))) {
+    return configuredTTSDefaultVoice(findTTSComponent(componentCatalog.value, provider)) || LOCAL_COSYVOICE3_DEFAULT_VOICE
+  }
   if (provider === 'qwen' && isOfflineCosyVoiceCloneOnlyTTS.value) return ''
   if (provider === 'qwen' && isOfflineCosyVoiceBuiltinTTS.value) return DEFAULT_COSYVOICE_V3_VOICE
   if (provider === 'doubao') return DEFAULT_DOUBAO_TTS_VOICE
@@ -309,6 +345,9 @@ function isOfflinePresetVoice(voice: string): boolean {
 
 function isOfflineTTSVoiceValid(provider: string, voice: string): boolean {
   if (!voice.trim()) return false
+  if (isLocalCosyVoice3TTS(provider, findTTSComponent(componentCatalog.value, provider))) {
+    return isConfiguredLocalTTSVoice(findTTSComponent(componentCatalog.value, provider), voice)
+  }
   if (provider === 'openai') return isOpenAIVoiceType(voice)
   if (provider === 'doubao') return isDoubaoTTSVoiceType(voice)
   if (provider === 'qwen' && isOfflineCosyVoiceCloneOnlyTTS.value) return !isOfflinePresetVoice(voice)
@@ -359,17 +398,32 @@ function loadOfflineTTSPreference() {
   hydratingOfflineTTS = true
   try {
     const preference = store.current?.offline_video_tts
-    const requestedProvider = preference?.provider || defaultOfflineTTSProvider()
+    const cardDefaults = store.current ? characterCardOfflineTTS(store.current) : null
+    const useCard = !hasExplicitOfflineVideoTTS(preference) && cardDefaults
+    const requestedProvider = useCard
+      ? cardDefaults!.provider
+      : (preference?.provider || defaultOfflineTTSProvider())
     const provider = componentCatalog.value.tts.some(item => item.id === requestedProvider)
       ? requestedProvider
       : defaultOfflineTTSProvider()
     offlineTTSProvider.value = provider
-    offlineTTSModel.value = preference?.model || defaultOfflineTTSModel(provider)
-    offlineTTSVoice.value = normalizeOfflineTTSVoice(provider, preference?.voice || '')
+    const requestedModel = useCard
+      ? (cardDefaults!.model || defaultOfflineTTSModel(provider))
+      : (preference?.model || defaultOfflineTTSModel(provider))
+    offlineTTSModel.value = requestedModel
+    const requestedVoice = useCard
+      ? (cardDefaults!.voice || defaultOfflineTTSVoice(provider))
+      : (preference?.voice || '')
+    offlineTTSVoice.value = normalizeOfflineTTSVoice(provider, requestedVoice)
     offlineTTSSaveError.value = ''
   } finally {
     hydratingOfflineTTS = false
   }
+}
+
+async function handleOfflineDoubaoVoicePreview() {
+  if (!canOfflineDoubaoOfficialPreview.value) return
+  await previewOfflineDoubaoVoice(offlineTTSVoice.value.trim())
 }
 
 function scheduleOfflineTTSSave() {
@@ -597,6 +651,7 @@ watch(
   () => offlineTTSProvider.value,
   (provider) => {
     if (hydratingOfflineTTS) return
+    stopOfflineDoubaoPreview()
     offlineTTSModel.value = defaultOfflineTTSModel(provider)
     offlineCosyVoiceMode.value = 'official'
     offlineTTSVoice.value = defaultOfflineTTSVoice(provider)
@@ -616,6 +671,7 @@ watch(
 watch(
   () => offlineTTSVoice.value,
   () => {
+    stopOfflineDoubaoPreview()
     scheduleOfflineTTSSave()
   },
 )
@@ -1015,7 +1071,7 @@ onUnmounted(() => {
                           :options="offlineTTSModelOptions"
                         />
                       </label>
-                      <label class="settings-field">
+                      <label class="settings-field local-tts-field--voice">
                         <span>{{ t('common.voice') }}</span>
                         <input
                           v-if="isOfflineCosyVoiceCloneOnlyTTS"
@@ -1057,16 +1113,34 @@ onUnmounted(() => {
                             :placeholder="t('offlineVideo.cosyVoiceIdPlaceholder')"
                           >
                         </template>
-                        <CvSelect
-                          v-else
-                          v-model="offlineTTSVoice"
-                          :options="offlineTTSVoiceOptions"
-                          :searchable="offlineTTSProvider === 'doubao'"
-                          :search-placeholder="t('common.search')"
-                          :empty-label="t('common.noResults')"
-                        />
+                        <div v-else class="local-tts-voice-row">
+                          <CvSelect
+                            v-model="offlineTTSVoice"
+                            :options="offlineTTSVoiceOptions"
+                            :searchable="offlineTTSProvider === 'doubao'"
+                            :search-placeholder="t('common.search')"
+                            :empty-label="t('common.noResults')"
+                          />
+                          <button
+                            v-if="offlineTTSProvider === 'doubao'"
+                            type="button"
+                            :title="t('characterEdit.previewListenHint')"
+                            :disabled="!canOfflineDoubaoOfficialPreview"
+                            :class="{ 'opacity-40 cursor-not-allowed': !canOfflineDoubaoOfficialPreview }"
+                            class="cv-pi-button cv-pi-button--compact local-tts-preview-btn"
+                            @click="handleOfflineDoubaoVoicePreview"
+                          >
+                            {{ offlinePreviewingVoice === offlineTTSVoice ? t('characterEdit.previewStop') : t('characterEdit.previewListen') }}
+                          </button>
+                        </div>
                       </label>
                     </div>
+                    <p
+                      v-if="offlineTTSProvider === 'doubao' && offlineDoubaoPreviewError"
+                      class="field-error"
+                    >
+                      {{ t('characterEdit.previewVoiceFailed') }}
+                    </p>
                     <p v-if="isOfflineCosyVoiceCloneOnlyTTS" class="local-tts-hint">{{ t('offlineVideo.cosyVoiceIdHint') }}</p>
                     <p v-else-if="isOfflineCosyVoiceBuiltinTTS" class="local-tts-hint">{{ t('offlineVideo.cosyVoiceBuiltinHint') }}</p>
                     <p v-if="offlineTTSSaveError" class="field-error">{{ offlineTTSSaveError }}</p>
@@ -1424,6 +1498,17 @@ onUnmounted(() => {
 
 .local-tts-field--model {
   min-width: 240px;
+}
+
+.local-tts-voice-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.local-tts-preview-btn {
+  align-self: flex-start;
+  min-height: 36px;
 }
 
 .local-tts-hint {

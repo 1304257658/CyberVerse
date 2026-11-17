@@ -68,7 +68,8 @@ def _configure_process_logging() -> None:
 
 class InferenceServer:
     def __init__(self, config_path: str) -> None:
-        self.config = load_config(config_path)
+        self.config_path = str(resolve_config_path(config_path))
+        self.config = load_config(self.config_path)
         avatar_cfg = self.config.get("inference", {}).get("avatar", {})
         self.avatar_enabled = _config_bool(avatar_cfg.get("enabled"), True)
         self.registry = PluginRegistry()
@@ -108,6 +109,14 @@ class InferenceServer:
                 shared["omni"] = omni
         if category == "persona":
             shared["runtime_config"] = self.config
+        if category == "llm":
+            tool_calling = self.config.get("inference", {}).get("tool_calling")
+            if isinstance(tool_calling, dict):
+                shared["tool_calling"] = tool_calling
+        if category in {"avatar", "llm"}:
+            shared["config_path"] = self.config_path
+        if category == "avatar":
+            shared["avatar_model_key"] = full_name.split(".", 1)[-1]
         return PluginConfig(
             plugin_name=full_name,
             params=params,

@@ -3,6 +3,9 @@
 # Doubao realtime voice LLM and Doubao TTS.
 # Prefer DOUBAO_API_KEY for the newer console auth flow.
 DOUBAO_API_KEY=your_doubao_api_key
+# Optional Volcengine IAM credentials for ListSpeakers catalog (official voice trial URLs only; not TTS synthesis).
+# VOLC_ACCESS_KEY=your_volc_access_key
+# VOLC_SECRET_KEY=your_volc_secret_key
 # Legacy Doubao auth fields kept for older Volcengine credentials.
 DOUBAO_ACCESS_TOKEN=your_doubao_access_token
 DOUBAO_APP_ID=your_doubao_app_id
@@ -45,6 +48,10 @@ RUNCRATE_API_KEY=your_runcrate_api_key
 
 # DeepSeek OpenAI-compatible LLM models (https://api.deepseek.com).
 DEEPSEEK_API_KEY=your_deepseek_api_key
+
+# Optional web search for standard DeepSeek tool calling (enable in llm_models/deepseek.yaml).
+TAVILY_API_KEY=your_tavily_api_key
+BRAVE_SEARCH_API_KEY=your_brave_search_api_key
 
 # Digital human providers
 

@@ -12,6 +12,7 @@ import { useDirectWebRTC } from '../composables/useDirectWebRTC'
 import { useChat, type BaiduXilingAudioEvent } from '../composables/useChat'
 import { useVisualInput, type VisualInputConfig } from '../composables/useVisualInput'
 import { deleteSession } from '../services/api'
+import { useCharacterStore } from '../stores/characters'
 import {
   clearSessionLaunchState,
   loadSessionLaunchState,
@@ -22,6 +23,7 @@ import {
 const router = useRouter()
 const route = useRoute()
 const { t } = useI18n()
+const characterStore = useCharacterStore()
 const sessionId = computed(() => route.params.id as string)
 
 const videoPlayerRef = ref<InstanceType<typeof VideoPlayer> | null>(null)
@@ -207,6 +209,7 @@ const {
   historyLoading,
   historyHasMore,
   sendText,
+  clearChat,
   connect: chatConnect,
   disconnect: chatDisconnect,
   loadHistory,
@@ -216,7 +219,12 @@ const {
   sendSignaling,
   sendWSMessage,
   isConnected: chatConnected,
-} = useChat(() => sessionId.value)
+} = useChat(
+  () => sessionId.value,
+  () => (characterStore.current?.id === characterId.value
+    ? characterStore.current?.chat_history_cleared_at
+    : undefined),
+)
 
 registerViduControlHandler((event) => {
   if (event.type === 'vidu_ready') {
@@ -885,6 +893,7 @@ onMounted(async () => {
 
   // Load conversation history for this character
   if (characterId.value) {
+    await characterStore.fetchOne(characterId.value).catch(() => {})
     loadHistory(characterId.value)
   }
 
@@ -966,6 +975,24 @@ async function handleDisconnect() {
     clearSessionLaunchState(sessionId.value)
   }
   router.push(returnPath)
+}
+
+async function handleClearChat() {
+  if (!window.confirm(t('session.clearConfirm'))) {
+    return
+  }
+  try {
+    const clearedAt = await clearChat()
+    if (characterStore.current?.id === characterId.value) {
+      characterStore.current = {
+        ...characterStore.current,
+        chat_history_cleared_at: clearedAt,
+      }
+    }
+  } catch (err) {
+    console.error('[SessionPage] clear chat failed:', err)
+    window.alert(t('session.clearFailed'))
+  }
 }
 
 function handleLoadMore() {
@@ -1380,7 +1407,14 @@ function micDockBarHeight(level: number): string {
             </button>
             <span class="text-base font-semibold text-cv-text truncate">{{ t('session.chatTitle') }}</span>
           </div>
-          <button class="text-[13px] text-cv-text-muted hover:text-cv-text transition-colors cursor-pointer">{{ t('session.clear') }}</button>
+          <button
+            type="button"
+            class="text-[13px] text-cv-text-muted hover:text-cv-text transition-colors cursor-pointer"
+            :disabled="historyLoading"
+            @click="handleClearChat"
+          >
+            {{ t('session.clear') }}
+          </button>
         </div>
 
         <!-- Messages (reuse ChatPanel) -->

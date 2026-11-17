@@ -12,7 +12,7 @@ from transformers import Wav2Vec2FeatureExtractor
 from flash_head.src.modules.flash_head_model import WanModelAudioProject
 from flash_head.audio_analysis.wav2vec2 import Wav2Vec2Model
 from flash_head.utils.utils import match_and_blend_colors_torch, resize_and_centercrop
-from flash_head.utils.facecrop import process_image
+from flash_head.utils.cond_image import get_cond_image_dict
 
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off", ""}
@@ -39,25 +39,6 @@ def _resolve_bool_flag(env_key, configured, *, default):
 
 # use parallel vae to speedup decode/encode, only support WanVAE
 USE_PARALLEL_VAE = True
-
-def get_cond_image_dict(cond_image_path_or_dir, use_face_crop):
-    def get_image(cond_image_path, use_face_crop):
-        if use_face_crop:
-            try:
-                image = process_image(cond_image_path)
-                return image
-            except Exception as e:
-                logger.error(f"Error processing {cond_image_path}: {e}")
-        return Image.open(cond_image_path).convert("RGB")
-
-    if os.path.isdir(cond_image_path_or_dir):
-        import glob
-        cond_image_list = glob.glob(os.path.join(cond_image_path_or_dir, "*.png"))
-        cond_image_list.sort()
-        cond_image_dict = {cond_image.split("/")[-1].split(".")[0]: get_image(cond_image, use_face_crop) for cond_image in cond_image_list}
-    else:
-        cond_image_dict = {cond_image_path_or_dir.split("/")[-1].split(".")[0]: get_image(cond_image_path_or_dir, use_face_crop)}
-    return cond_image_dict
 
 def timestep_transform(
     t,

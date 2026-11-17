@@ -1,6 +1,7 @@
-import mediapipe as mp
 import numpy as np
 from typing import Tuple, List
+
+from flash_head.utils.mediapipe_compat import create_face_detection
 
 
 class CPUFaceHandler:
@@ -13,7 +14,7 @@ class CPUFaceHandler:
 
     def __init__(self, model_selection: int = 1, min_detection_confidence: float = 0.0):
         """Initialize the face detection handler."""
-        self.detector = mp.solutions.face_detection.FaceDetection(
+        self.detector = create_face_detection(
             model_selection=model_selection,
             min_detection_confidence=min_detection_confidence,
         )

@@ -9,12 +9,21 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+type componentVoiceOption struct {
+	Value   string `json:"value"`
+	Label   string `json:"label"`
+	LabelEn string `json:"label_en,omitempty"`
+}
+
 type componentOption struct {
-	ID        string `json:"id"`
-	Name      string `json:"name"`
-	Model     string `json:"model"`
-	Default   bool   `json:"default"`
-	Available bool   `json:"available"`
+	ID           string                 `json:"id"`
+	Name         string                 `json:"name"`
+	Model        string                 `json:"model"`
+	Default      bool                   `json:"default"`
+	Available    bool                   `json:"available"`
+	DefaultVoice string                 `json:"default_voice,omitempty"`
+	Voices       []componentVoiceOption `json:"voices,omitempty"`
+	TTSKind      string                 `json:"tts_kind,omitempty"`
 }
 
 type componentsResponse struct {
@@ -136,6 +145,8 @@ func defaultTTSVoice(provider string) string {
 		return "zh_female_xiaohe_uranus_bigtts"
 	case "openai":
 		return "nova"
+	case "cosyvoice3":
+		return "cyberverse_default"
 	default:
 		return ""
 	}
@@ -173,13 +184,17 @@ func (r *Router) componentOptions(doc *yaml.Node, category string, fallbackDefau
 		if pluginClass == "" {
 			continue
 		}
-		options = append(options, componentOption{
+		opt := componentOption{
 			ID:        id,
 			Name:      displayComponentName(id),
 			Model:     componentModel(node, category),
 			Default:   id == defaultID,
 			Available: pluginClass != "",
-		})
+		}
+		if category == "tts" {
+			enrichTTSComponentOption(&opt, id, pluginClass, node)
+		}
+		options = append(options, opt)
 	}
 
 	sort.SliceStable(options, func(i, j int) bool {
@@ -220,10 +235,115 @@ func componentModel(node *yaml.Node, category string) string {
 	return category
 }
 
+func isLocalCosyVoice3TTSPlugin(providerID, pluginClass string) bool {
+	providerID = strings.ToLower(strings.TrimSpace(providerID))
+	pluginClass = strings.ToLower(strings.TrimSpace(pluginClass))
+	return providerID == "cosyvoice3" || strings.Contains(pluginClass, "cosyvoice3")
+}
+
+func enrichTTSComponentOption(opt *componentOption, providerID, pluginClass string, node *yaml.Node) {
+	if opt == nil || node == nil {
+		return
+	}
+	voice := scalarAt(node, "voice")
+	if voice != "" {
+		opt.DefaultVoice = voice
+	}
+	if isLocalCosyVoice3TTSPlugin(providerID, pluginClass) {
+		opt.TTSKind = "local_cosyvoice3"
+		if voice == "" {
+			voice = "cyberverse_default"
+			opt.DefaultVoice = voice
+		}
+		opt.Voices = []componentVoiceOption{{
+			Value:   voice,
+			Label:   localCosyVoice3VoiceLabel(voice),
+			LabelEn: "Local configured voice",
+		}}
+	}
+}
+
+func localCosyVoice3VoiceLabel(voiceID string) string {
+	switch strings.TrimSpace(voiceID) {
+	case "cyberverse_default":
+		return "本地默认音色（zero-shot 参考）"
+	default:
+		return voiceID
+	}
+}
+
+func (r *Router) configuredTTSModel(provider string) string {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return ""
+	}
+	options, err := r.configuredComponentOptions("tts")
+	if err != nil {
+		return ""
+	}
+	for _, opt := range options {
+		if opt.ID == provider {
+			return strings.TrimSpace(opt.Model)
+		}
+	}
+	return ""
+}
+
+func (r *Router) configuredTTSVoiceAllowList(provider string) []string {
+	provider = strings.TrimSpace(provider)
+	if provider == "" {
+		return nil
+	}
+	options, err := r.configuredComponentOptions("tts")
+	if err != nil {
+		return nil
+	}
+	for _, opt := range options {
+		if opt.ID != provider {
+			continue
+		}
+		if len(opt.Voices) > 0 {
+			out := make([]string, 0, len(opt.Voices))
+			for _, voice := range opt.Voices {
+				if v := strings.TrimSpace(voice.Value); v != "" {
+					out = append(out, v)
+				}
+			}
+			return out
+		}
+		if v := strings.TrimSpace(opt.DefaultVoice); v != "" {
+			return []string{v}
+		}
+		if v := defaultTTSVoice(provider); v != "" {
+			return []string{v}
+		}
+	}
+	return nil
+}
+
+func (r *Router) isAllowedTTSVoice(provider, voice string) bool {
+	voice = strings.TrimSpace(voice)
+	if voice == "" {
+		return false
+	}
+	allow := r.configuredTTSVoiceAllowList(provider)
+	if len(allow) == 0 {
+		return true
+	}
+	for _, allowed := range allow {
+		if allowed == voice {
+			return true
+		}
+	}
+	return false
+}
+
 func displayComponentName(id string) string {
 	switch strings.ToLower(strings.TrimSpace(id)) {
 	case "qwen":
 		return "Qwen"
+	case "cosyvoice3":
+		return "CosyVoice3 (local)"
 	case "openai":
 		return "OpenAI"
 	case "ollama":

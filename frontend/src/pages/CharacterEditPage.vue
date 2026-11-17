@@ -35,7 +35,16 @@ import {
   isQwenOmniVoiceType,
   isQwenTTSVoiceType,
   localizedVoiceOptions,
+  LOCAL_COSYVOICE3_DEFAULT_VOICE,
 } from '../utils/voice'
+import {
+  configuredTTSDefaultVoice,
+  configuredTTSVoices,
+  findTTSComponent,
+  isCloudQwenCosyVoiceTTS,
+  isConfiguredLocalTTSVoice,
+  isLocalCosyVoice3TTS,
+} from '../utils/ttsProviderCapabilities'
 
 const router = useRouter()
 const route = useRoute()
@@ -201,16 +210,23 @@ const selectedOmniProvider = computed(() => form.value.voice_provider || 'doubao
 const usesDoubaoTTS = computed(() => form.value.mode !== 'omni' && selectedTTS.value === 'doubao')
 const usesDoubaoOmniVoice = computed(() => form.value.mode === 'omni' && selectedOmniProvider.value === 'doubao')
 const usesDoubaoVoice = computed(() => usesDoubaoTTS.value || usesDoubaoOmniVoice.value)
-const usesCosyVoiceTTS = computed(() =>
+const selectedTTSComponentOption = computed(() => selectedComponent('tts'))
+const usesLocalCosyVoice3TTS = computed(() =>
   form.value.mode !== 'omni'
-  && selectedTTS.value === 'qwen'
-  && isCosyVoiceTTSModel(selectedTTSModel.value)
+  && isLocalCosyVoice3TTS(selectedTTS.value, selectedTTSComponentOption.value),
+)
+const usesCloudQwenCosyVoiceTTS = computed(() =>
+  form.value.mode !== 'omni'
+  && isCloudQwenCosyVoiceTTS(selectedTTS.value, selectedTTSModel.value),
 )
 const usesCosyVoiceCloneOnlyTTS = computed(() =>
-  usesCosyVoiceTTS.value && isCosyVoiceCloneOnlyModel(selectedTTSModel.value)
+  usesCloudQwenCosyVoiceTTS.value && isCosyVoiceCloneOnlyModel(selectedTTSModel.value),
 )
 const usesCosyVoiceBuiltinTTS = computed(() =>
-  usesCosyVoiceTTS.value && isCosyVoiceBuiltinModel(selectedTTSModel.value)
+  usesCloudQwenCosyVoiceTTS.value && isCosyVoiceBuiltinModel(selectedTTSModel.value),
+)
+const localCosyVoiceVoiceOptions = computed(() =>
+  localizedVoiceOptions(configuredTTSVoices(selectedTTSComponentOption.value), locale.value),
 )
 const usesQwenOmniVoice = computed(() =>
   form.value.mode === 'omni' && selectedOmniProvider.value === 'qwen_omni'
@@ -252,6 +268,10 @@ function selectedComponent(category: 'llm' | 'asr' | 'tts') {
   return componentCatalog.value[category].find(item => item.id === selected)
 }
 function modelOptions(category: 'llm' | 'asr' | 'tts') {
+  if (category === 'tts' && usesLocalCosyVoice3TTS.value) {
+    const model = selectedTTSComponentOption.value?.model || ''
+    return model ? [{ label: model, value: model }] : []
+  }
   if (category === 'tts' && selectedTTS.value === 'qwen') {
     const currentModel = selectedTTSModel.value
     const hasCurrent = QWEN_TTS_MODEL_OPTIONS.some(option => option.value === currentModel)
@@ -297,6 +317,8 @@ const canSave = computed(() =>
   !!form.value.name.trim() && hasRequiredAvatarConfig.value && (
     isViduAvatar.value
       ? isQwenOmniVoiceType(form.value.voice_type)
+      : usesLocalCosyVoice3TTS.value
+      ? isConfiguredLocalTTSVoice(selectedTTSComponentOption.value, form.value.voice_type)
       : usesDoubaoVoice.value
       ? (voiceMode.value === 'official' || !!trimmedCustomVoiceType.value)
       : !!form.value.voice_type.trim()
@@ -306,6 +328,7 @@ const canCheckVoice = computed(() =>
   (usesDoubaoVoice.value && (voiceMode.value === 'official' || !!trimmedCustomVoiceType.value))
   || ((usesQwenOmniVoice.value || usesGrokVoice.value || usesGeminiLiveVoice.value || usesOpenAIRealtimeVoice.value) && !!form.value.voice_type.trim())
   || (form.value.mode !== 'omni' && selectedTTS.value === 'qwen' && !!form.value.voice_type.trim())
+  || (usesLocalCosyVoice3TTS.value && isConfiguredLocalTTSVoice(selectedTTSComponentOption.value, form.value.voice_type))
   || (isOpenAIVoice.value && !!form.value.voice_type.trim())
 )
 const voiceCheckSucceeded = computed(() => voiceTestStatus.value === 'success')
@@ -374,6 +397,9 @@ function isCurrentDoubaoOfficialVoice(value: string): boolean {
 function defaultVoiceForTTS(tts: string) {
   if (tts === 'openai') return 'nova'
   if (tts === 'doubao') return DEFAULT_DOUBAO_TTS_VOICE
+  if (isLocalCosyVoice3TTS(tts, findTTSComponent(componentCatalog.value, tts))) {
+    return configuredTTSDefaultVoice(findTTSComponent(componentCatalog.value, tts)) || LOCAL_COSYVOICE3_DEFAULT_VOICE
+  }
   if (tts === 'qwen' && usesCosyVoiceCloneOnlyTTS.value) return ''
   if (tts === 'qwen' && usesCosyVoiceBuiltinTTS.value) return DEFAULT_COSYVOICE_V3_VOICE
   return DEFAULT_QWEN_TTS_VOICE
@@ -533,6 +559,16 @@ function applyTTSVoiceDefault(tts: string, force = false) {
   }
   form.value.voice_provider = tts
   const current = form.value.voice_type.trim()
+  if (isLocalCosyVoice3TTS(tts, findTTSComponent(componentCatalog.value, tts))) {
+    const option = findTTSComponent(componentCatalog.value, tts)
+    const configuredDefault = configuredTTSDefaultVoice(option) || LOCAL_COSYVOICE3_DEFAULT_VOICE
+    if (force || !current || !isConfiguredLocalTTSVoice(option, current)) {
+      form.value.voice_type = configuredDefault
+    }
+    voiceMode.value = 'official'
+    customVoiceType.value = ''
+    return
+  }
   if (tts === 'qwen' && usesCosyVoiceCloneOnlyTTS.value) {
     cosyVoiceMode.value = 'custom'
     if (!current || isPresetVoice(current)) {
@@ -726,6 +762,16 @@ function resolveVoiceType() {
     const voice = form.value.voice_type.trim() || DEFAULT_OPENAI_REALTIME_VOICE
     form.value.voice_type = isOpenAIRealtimeVoiceType(voice) ? voice : DEFAULT_OPENAI_REALTIME_VOICE
     return form.value.voice_type
+  }
+
+  if (usesLocalCosyVoice3TTS.value) {
+    const voice = form.value.voice_type.trim() || defaultVoiceForTTS(selectedTTS.value)
+    if (!isConfiguredLocalTTSVoice(selectedTTSComponentOption.value, voice)) {
+      voiceError.value = t('characterEdit.localCosyVoice3VoiceRequired')
+      return null
+    }
+    form.value.voice_type = voice
+    return voice
   }
 
   if (!usesDoubaoVoice.value) {
@@ -974,7 +1020,9 @@ async function handleCheckVoice() {
     await testCharacterVoice({
       voice_provider: resolveVoiceProviderForCheck(),
       voice_type: voiceType,
-      model: ((form.value.mode !== 'omni' && selectedTTS.value === 'qwen') || usesDoubaoTTS.value) ? selectedTTSModel.value : undefined,
+      model: ((form.value.mode !== 'omni' && (selectedTTS.value === 'qwen' || usesLocalCosyVoice3TTS.value)) || usesDoubaoTTS.value)
+        ? selectedTTSModel.value
+        : undefined,
     })
     voiceTestStatus.value = 'success'
     voiceTestMessage.value = ''
@@ -1555,10 +1603,41 @@ const pageTitle = computed(() =>
                   {{ t('characterEdit.previewVoice') }}
                 </p>
                 <p
-                  v-if="usesCosyVoiceTTS && voiceError"
+                  v-if="(usesCloudQwenCosyVoiceTTS || usesLocalCosyVoice3TTS) && voiceError"
                   class="text-[11px] leading-5 text-cv-danger md:col-span-2 md:col-start-2 md:-mt-1"
                 >
                   {{ voiceError }}
+                </p>
+                <p
+                  v-if="voiceTestStatus === 'error' && voiceTestMessage"
+                  class="text-[11px] leading-5 text-cv-danger whitespace-pre-wrap break-all md:col-span-2 md:col-start-2 md:-mt-1"
+                >
+                  {{ voiceTestMessage }}
+                </p>
+              </template>
+              <template v-else-if="usesLocalCosyVoice3TTS">
+                <label class="block md:col-span-2 md:col-start-2">
+                  <span class="text-[12px] font-medium text-cv-text-muted">{{ t('common.voice') }}</span>
+                  <div class="mt-1.5 grid gap-3 lg:grid-cols-[minmax(0,1fr)_96px]">
+                    <CvSelect
+                      v-model="form.voice_type"
+                      :options="localCosyVoiceVoiceOptions"
+                      :success="voiceCheckSucceeded"
+                      class="min-w-0"
+                    />
+                    <button
+                      type="button"
+                      @click="handleCheckVoice"
+                      :disabled="testingVoice || !canCheckVoice"
+                      :class="{ 'opacity-40 cursor-not-allowed': testingVoice || !canCheckVoice }"
+                      class="cv-pi-button cv-pi-button--compact h-[42px] w-full min-w-0 px-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {{ t('common.check') }}
+                    </button>
+                  </div>
+                </label>
+                <p class="text-[11px] leading-5 text-cv-text-muted md:col-span-2 md:col-start-2 md:-mt-1">
+                  {{ t('characterEdit.localCosyVoice3Hint') }}
                 </p>
                 <p
                   v-if="voiceTestStatus === 'error' && voiceTestMessage"

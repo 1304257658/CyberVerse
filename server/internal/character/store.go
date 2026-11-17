@@ -295,9 +295,14 @@ func NormalizeAgentExtensions(extensions []AgentExtension) []AgentExtension {
 	return out
 }
 
+const DefaultLocalCosyVoice3Voice = "cyberverse_default"
+
 func defaultVoiceTypeForComponents(components Components) string {
 	if components.TTS == "doubao" {
 		return "zh_female_xiaohe_uranus_bigtts"
+	}
+	if components.TTS == "cosyvoice3" {
+		return DefaultLocalCosyVoice3Voice
 	}
 	if components.TTS != "qwen" {
 		return ""

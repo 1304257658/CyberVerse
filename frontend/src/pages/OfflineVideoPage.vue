@@ -29,6 +29,15 @@ import {
 } from '../utils/voice'
 import { useDoubaoVoicePreview } from '../composables/useDoubaoVoicePreview'
 import { characterCardOfflineTTS, hasExplicitOfflineVideoTTS } from '../utils/offlineVideoTtsDefaults'
+import {
+  configuredTTSDefaultVoice,
+  configuredTTSVoices,
+  findTTSComponent,
+  isCloudQwenCosyVoiceTTS,
+  isConfiguredLocalTTSVoice,
+  isLocalCosyVoice3TTS,
+} from '../utils/ttsProviderCapabilities'
+import { LOCAL_COSYVOICE3_DEFAULT_VOICE } from '../utils/voice'
 
 const route = useRoute()
 const router = useRouter()
@@ -195,6 +204,10 @@ const selectedOfflineTTSComponent = computed(() =>
   componentCatalog.value.tts.find(item => item.id === offlineTTSProvider.value),
 )
 const offlineTTSModelOptions = computed(() => {
+  if (isOfflineLocalCosyVoice3TTS.value) {
+    const model = selectedOfflineTTSComponent.value?.model || ''
+    return model ? [{ label: model, value: model }] : []
+  }
   if (offlineTTSProvider.value === 'qwen') {
     const hasCurrent = QWEN_TTS_MODEL_OPTIONS.some(option => option.value === offlineTTSModel.value)
     return hasCurrent || !offlineTTSModel.value
@@ -204,8 +217,11 @@ const offlineTTSModelOptions = computed(() => {
   const model = selectedOfflineTTSComponent.value?.model || ''
   return model ? [{ label: model, value: model }] : []
 })
+const isOfflineLocalCosyVoice3TTS = computed(() =>
+  isLocalCosyVoice3TTS(offlineTTSProvider.value, selectedOfflineTTSComponent.value),
+)
 const isOfflineCosyVoiceTTS = computed(() =>
-  offlineTTSProvider.value === 'qwen' && isCosyVoiceTTSModel(offlineTTSModel.value)
+  isCloudQwenCosyVoiceTTS(offlineTTSProvider.value, offlineTTSModel.value),
 )
 const isOfflineCosyVoiceCloneOnlyTTS = computed(() =>
   isOfflineCosyVoiceTTS.value && isCosyVoiceCloneOnlyModel(offlineTTSModel.value)
@@ -214,6 +230,9 @@ const isOfflineCosyVoiceBuiltinTTS = computed(() =>
   isOfflineCosyVoiceTTS.value && isCosyVoiceBuiltinModel(offlineTTSModel.value)
 )
 const offlineTTSVoiceOptions = computed(() => {
+  if (isOfflineLocalCosyVoice3TTS.value) {
+    return localizedVoiceOptions(configuredTTSVoices(selectedOfflineTTSComponent.value), locale.value)
+  }
   if (offlineTTSProvider.value === 'openai') {
     return localizedVoiceOptions(OPENAI_VOICE_OPTIONS, locale.value)
   }
@@ -302,10 +321,13 @@ function defaultOfflineTTSProvider(): string {
 
 function defaultOfflineTTSModel(provider: string): string {
   if (provider === 'qwen') return QWEN_TTS_MODEL_OPTIONS[0]?.value || selectedOfflineTTSComponent.value?.model || ''
-  return selectedOfflineTTSComponent.value?.model || ''
+  return findTTSComponent(componentCatalog.value, provider)?.model || selectedOfflineTTSComponent.value?.model || ''
 }
 
 function defaultOfflineTTSVoice(provider: string): string {
+  if (isLocalCosyVoice3TTS(provider, findTTSComponent(componentCatalog.value, provider))) {
+    return configuredTTSDefaultVoice(findTTSComponent(componentCatalog.value, provider)) || LOCAL_COSYVOICE3_DEFAULT_VOICE
+  }
   if (provider === 'qwen' && isOfflineCosyVoiceCloneOnlyTTS.value) return ''
   if (provider === 'qwen' && isOfflineCosyVoiceBuiltinTTS.value) return DEFAULT_COSYVOICE_V3_VOICE
   if (provider === 'doubao') return DEFAULT_DOUBAO_TTS_VOICE
@@ -323,6 +345,9 @@ function isOfflinePresetVoice(voice: string): boolean {
 
 function isOfflineTTSVoiceValid(provider: string, voice: string): boolean {
   if (!voice.trim()) return false
+  if (isLocalCosyVoice3TTS(provider, findTTSComponent(componentCatalog.value, provider))) {
+    return isConfiguredLocalTTSVoice(findTTSComponent(componentCatalog.value, provider), voice)
+  }
   if (provider === 'openai') return isOpenAIVoiceType(voice)
   if (provider === 'doubao') return isDoubaoTTSVoiceType(voice)
   if (provider === 'qwen' && isOfflineCosyVoiceCloneOnlyTTS.value) return !isOfflinePresetVoice(voice)

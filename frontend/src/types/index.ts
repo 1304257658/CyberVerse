@@ -119,12 +119,21 @@ export interface CharacterComponents {
   tts_model?: string
 }
 
+export interface ComponentVoiceOption {
+  value: string
+  label: string
+  label_en?: string
+}
+
 export interface ComponentOption {
   id: string
   name: string
   model: string
   default: boolean
   available: boolean
+  default_voice?: string
+  voices?: ComponentVoiceOption[]
+  tts_kind?: string
 }
 
 export interface ComponentsResponse {

@@ -20,6 +20,15 @@ export const DEFAULT_GROK_VOICE = 'eve'
 export const DEFAULT_GEMINI_LIVE_VOICE = 'Kore'
 export const DEFAULT_OPENAI_REALTIME_VOICE = 'marin'
 export const DEFAULT_COSYVOICE_V3_VOICE = 'longanyang'
+export const LOCAL_COSYVOICE3_DEFAULT_VOICE = 'cyberverse_default'
+
+export function localCosyVoice3VoiceLabel(voiceId: string): string {
+  const trimmed = voiceId.trim()
+  if (trimmed === LOCAL_COSYVOICE3_DEFAULT_VOICE) {
+    return '本地默认音色（zero-shot 参考）'
+  }
+  return trimmed
+}
 
 type VoiceDisplayOption = {
   label: string
@@ -206,6 +215,9 @@ export function formatVoiceTypeDisplay(
     return locale.toLowerCase().startsWith('en')
       ? englishLabelFromCurrentLabel(doubaoOption.label, trimmed, doubaoOption.labelEn)
       : chineseLabelFromCurrentLabel(doubaoOption.label)
+  }
+  if (trimmed === 'cyberverse_default') {
+    return localCosyVoice3VoiceLabel(trimmed)
   }
   const label = qwenTTSVoiceLabelMap.get(trimmed)
     ?? qwenOmniVoiceLabelMap.get(trimmed)

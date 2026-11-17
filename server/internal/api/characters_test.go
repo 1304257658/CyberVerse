@@ -448,6 +448,68 @@ func TestTestCharacterVoiceSupportsCosyVoiceTTS(t *testing.T) {
 	}
 }
 
+func TestTestCharacterVoiceSupportsLocalCosyVoice3(t *testing.T) {
+	inf := &fakeInferenceService{
+		ttsConfigs: make(chan inference.TTSConfig, 1),
+		ttsChunks:  []*pb.AudioChunk{{Data: []byte{1, 2, 3}, SampleRate: 16000, Channels: 1, Format: "pcm"}},
+	}
+	r := newTestRouterWithInference(inf)
+	root := t.TempDir()
+	modelDir := filepath.Join(root, "infra", "config", "tts_models")
+	if err := os.MkdirAll(modelDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(modelDir, "cosyvoice3.yaml"), []byte(`
+cosyvoice3:
+  plugin_class: inference.plugins.tts.cosyvoice3_plugin.CosyVoice3TTSPlugin
+  model: Fun-CosyVoice3-0.5B-2512
+  voice: cyberverse_default
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	configPath := filepath.Join(root, "config", "cyberverse.yaml")
+	if err := os.MkdirAll(filepath.Dir(configPath), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(configPath, []byte(`inference: { tts: { default: cosyvoice3 } }`), 0644); err != nil {
+		t.Fatal(err)
+	}
+	r.configPath = configPath
+
+	req := httptest.NewRequest(
+		"POST",
+		"/api/v1/characters/test-voice",
+		strings.NewReader(`{"voice_provider":"cosyvoice3","model":"Fun-CosyVoice3-0.5B-2512","voice_type":"cyberverse_default"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	w := httptest.NewRecorder()
+	r.Handler().ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d: %s", w.Code, w.Body.String())
+	}
+
+	select {
+	case config := <-inf.ttsConfigs:
+		if config.Provider != "cosyvoice3" || config.Voice != "cyberverse_default" {
+			t.Fatalf("unexpected tts config: %+v", config)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for tts config")
+	}
+
+	badReq := httptest.NewRequest(
+		"POST",
+		"/api/v1/characters/test-voice",
+		strings.NewReader(`{"voice_provider":"cosyvoice3","model":"Fun-CosyVoice3-0.5B-2512","voice_type":"longanyang"}`),
+	)
+	badReq.Header.Set("Content-Type", "application/json")
+	badW := httptest.NewRecorder()
+	r.Handler().ServeHTTP(badW, badReq)
+	if badW.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for unknown local voice, got %d: %s", badW.Code, badW.Body.String())
+	}
+}
+
 func TestTestCharacterVoiceSupportsOpenAITTS(t *testing.T) {
 	inf := &fakeInferenceService{
 		ttsConfigs: make(chan inference.TTSConfig, 1),

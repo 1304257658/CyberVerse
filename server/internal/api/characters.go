@@ -305,13 +305,9 @@ func (r *Router) handleTestCharacterVoice(w http.ResponseWriter, req *http.Reque
 		writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "voice_type is required"})
 		return
 	}
-	if provider == "qwen" || provider == "openai" || (provider == "doubao" && isDoubaoTTSModel(model)) {
-		if provider == "qwen" && model == "" {
-			writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "model is required for qwen voice check"})
-			return
-		}
-		if provider == "qwen" && !isQwenTTSModel(model) {
-			writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: "unsupported qwen tts model for voice check: " + model})
+	if usesTTSVoiceCheck(provider, model) {
+		if errMsg := validateTTSVoiceCheckRequest(r, provider, model, voiceType); errMsg != "" {
+			writeJSON(w, http.StatusBadRequest, ErrorResponse{Error: errMsg})
 			return
 		}
 		if !r.configuredTTSProvider(provider) {
@@ -321,6 +317,9 @@ func (r *Router) handleTestCharacterVoice(w http.ResponseWriter, req *http.Reque
 		if r.orch == nil {
 			writeJSON(w, http.StatusServiceUnavailable, ErrorResponse{Error: errInferenceUnavailable.Error()})
 			return
+		}
+		if model == "" {
+			model = r.configuredTTSModel(provider)
 		}
 
 		ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
@@ -364,6 +363,43 @@ func (r *Router) handleTestCharacterVoice(w http.ResponseWriter, req *http.Reque
 	}
 
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func usesTTSVoiceCheck(provider, model string) bool {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	switch provider {
+	case "qwen", "openai", "cosyvoice3":
+		return true
+	case "doubao":
+		return isDoubaoTTSModel(model)
+	default:
+		return false
+	}
+}
+
+func validateTTSVoiceCheckRequest(r *Router, provider, model, voiceType string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	switch provider {
+	case "qwen":
+		if model == "" {
+			return "model is required for qwen voice check"
+		}
+		if !isQwenTTSModel(model) {
+			return "unsupported qwen tts model for voice check: " + model
+		}
+	case "openai":
+		if model == "" {
+			return "model is required for openai voice check"
+		}
+	case "cosyvoice3":
+		if model == "" && (r == nil || r.configuredTTSModel(provider) == "") {
+			return "model is required for cosyvoice3 voice check"
+		}
+		if r != nil && !r.isAllowedTTSVoice(provider, voiceType) {
+			return "voice_type is not configured for local cosyvoice3 provider"
+		}
+	}
+	return ""
 }
 
 func isCosyVoiceTTSModel(model string) bool {

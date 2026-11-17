@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { Character } from '../types'
+import { LOCAL_COSYVOICE3_DEFAULT_VOICE } from './voice'
 import { characterCardOfflineTTS, hasExplicitOfflineVideoTTS } from './offlineVideoTtsDefaults'
 
 const baseCharacter = (): Character => ({
